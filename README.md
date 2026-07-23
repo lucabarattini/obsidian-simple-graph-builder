@@ -24,6 +24,8 @@ This design provides **structured entity classification with expressive relation
 - **Multiple LLM Support**: Works with Claude, OpenAI, Gemini, and Ollama (local)
 - **Korean Language Support**: Bigram Jaccard similarity for robust Korean text matching (handles particles and spacing variations)
 - **Interactive Graph View**: Visualize your knowledge graph with fCoSE force-directed layout
+- **Hub & Community Insights**: Show top-degree nodes, detect local communities, and surface bridge concepts
+- **Safe Related-Note Backlinks**: Review reciprocal link suggestions with timestamped backups and idempotent managed sections
 - **Large Graph Support**: Optimized for thousands of nodes with fast rendering
 - **Note Neighborhood Panel**: See connections for the current note in a sidebar
 - **Manual Entity Merge**: Merge duplicate entities via graph view context menu
@@ -57,6 +59,7 @@ This approach resolves most entities via fast hash lookups, reserving expensive 
 | `Smart Search (AI)` | Natural language search using LLM to explore the graph |
 | `Open graph view` | Show the knowledge graph visualization |
 | `Open note neighborhood panel` | Show current note's connections in sidebar |
+| `Review related-note backlink suggestions` | Review and safely write reciprocal Obsidian links derived from shared entities |
 | `Remove current note from graph` | Remove active note from the graph |
 | `Clear all graph data` | Reset the entire graph |
 
@@ -153,6 +156,8 @@ Enable embedding-based entity resolution for intelligent deduplication:
 
 ### View Settings
 - **Open graph in main window**: Toggle to open the graph visualization in a main tab instead of the right sidebar
+- **Show strongest hubs**: Limit the graph to the top 25, 50, 100, or 200 entities by degree
+- **Graph color**: Color by entity type or locally detected community
 
 ### Data Management
 - View graph statistics (nodes by entity type, total relationships)

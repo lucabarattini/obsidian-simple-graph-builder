@@ -3,7 +3,7 @@ import SimpleGraphBuilderPlugin from '../main';
 import { ApiProvider, EmbeddingProvider, ExtractionMode } from '../types';
 import { MODEL_OPTIONS, EMBEDDING_MODEL_OPTIONS } from '../settings';
 import { clearHashes } from '../graph/hashes';
-import { analyzeEntireVault, isAnalyzingVault, cancelVaultAnalysis } from '../commands/analyze';
+import { analyzeEntireVault, isAnalyzingVault, cancelVaultAnalysis, getFilesInAnalysisScope } from '../commands/analyze';
 import { getEmbeddings, settingsToEmbeddingOptions } from '../extraction/llm-client';
 import { ConfirmModal } from './confirm-modal';
 
@@ -86,7 +86,7 @@ export class SettingsTab extends PluginSettingTab {
 		this.providerSettingsEls.openai = containerEl.createDiv();
 		new Setting(this.providerSettingsEls.openai)
 			.setName('API key')
-			.setDesc('Your OpenAI API key')
+			.setDesc('Your OpenAI API key. It is stored in this plugin\'s data.json and may sync with your vault; use a dedicated project key.')
 			.addText(text => {
 				text
 					.setPlaceholder('Enter API key')
@@ -235,6 +235,19 @@ export class SettingsTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.extractionMode || 'standard')
 					.onChange(async (value) => {
 						this.plugin.settings.extractionMode = value as ExtractionMode;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName('Analysis folder')
+			.setDesc('Optional vault-relative folder to analyze, for example "Notes". Leave blank for the entire vault.')
+			.addText(text => {
+				text
+					.setPlaceholder('Entire vault')
+					.setValue(this.plugin.settings.analysisFolder)
+					.onChange(async value => {
+						this.plugin.settings.analysisFolder = value.trim().replace(/^\/+|\/+$/g, '');
 						await this.plugin.saveSettings();
 					});
 			});
@@ -433,11 +446,89 @@ export class SettingsTab extends PluginSettingTab {
 			.setDesc(`Hide nodes with fewer than this many connections (current: ${this.plugin.settings.graphMinDegree})`)
 			.addSlider(slider => {
 				slider
-					.setLimits(0, 10, 1)
+					.setLimits(0, 50, 1)
 					.setValue(this.plugin.settings.graphMinDegree)
 					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.graphMinDegree = value;
+						await this.plugin.saveSettings();
+					});
+				});
+
+		new Setting(containerEl)
+			.setName('Show strongest hubs')
+			.setDesc('Limit the graph to the most connected entities. Use All together with minimum connections for a threshold-only view.')
+			.addDropdown(dropdown => {
+				dropdown
+					.addOption('0', 'All nodes')
+					.addOption('25', 'Top 25')
+					.addOption('50', 'Top 50')
+					.addOption('100', 'Top 100')
+					.addOption('200', 'Top 200')
+					.setValue(String(this.plugin.settings.graphTopNodeLimit))
+					.onChange(async value => {
+						this.plugin.settings.graphTopNodeLimit = Number(value);
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName('Graph color')
+			.setDesc('Color entities by ontology type or by locally detected meaning community.')
+			.addDropdown(dropdown => {
+				dropdown
+					.addOption('entityType', 'Entity type')
+					.addOption('community', 'Community')
+					.setValue(this.plugin.settings.graphColorMode)
+					.onChange(async value => {
+						this.plugin.settings.graphColorMode = value === 'community' ? 'community' : 'entityType';
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl).setName('Related-note backlinks').setHeading();
+
+		const backlinkInfo = containerEl.createEl('div', { cls: 'setting-item-description sgb-resolution-info' });
+		backlinkInfo.appendText('The review command ranks note pairs locally from shared extracted entities. It writes reciprocal links only after confirmation and backs up every changed note first.');
+
+		new Setting(containerEl)
+			.setName('Minimum shared entities')
+			.setDesc(`Require this many shared entities before suggesting a note pair (current: ${this.plugin.settings.backlinkMinSharedEntities}).`)
+			.addSlider(slider => {
+				slider
+					.setLimits(1, 5, 1)
+					.setValue(this.plugin.settings.backlinkMinSharedEntities)
+					.setDynamicTooltip()
+					.onChange(async value => {
+						this.plugin.settings.backlinkMinSharedEntities = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName('Maximum generated links per note')
+			.setDesc(`Prevent highly repetitive entries from dominating the vault (current: ${this.plugin.settings.backlinkMaxLinksPerNote}).`)
+			.addSlider(slider => {
+				slider
+					.setLimits(1, 10, 1)
+					.setValue(this.plugin.settings.backlinkMaxLinksPerNote)
+					.setDynamicTooltip()
+					.onChange(async value => {
+						this.plugin.settings.backlinkMaxLinksPerNote = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName('Ignore overly common entities')
+			.setDesc(`Entities found in more than this share of analyzed notes do not create backlinks (current: ${Math.round(this.plugin.settings.backlinkMaxEntityDocumentFrequency * 100)}%).`)
+			.addSlider(slider => {
+				slider
+					.setLimits(0.05, 0.5, 0.05)
+					.setValue(this.plugin.settings.backlinkMaxEntityDocumentFrequency)
+					.setDynamicTooltip()
+					.onChange(async value => {
+						this.plugin.settings.backlinkMaxEntityDocumentFrequency = value;
 						await this.plugin.saveSettings();
 					});
 			});
@@ -613,7 +704,7 @@ export class SettingsTab extends PluginSettingTab {
 		vaultWarning.createEl('strong', { text: 'Warning:' });
 		vaultWarning.appendText(' Analyzing the entire vault will:');
 		const warningList = vaultWarning.createEl('ul');
-		warningList.createEl('li', { text: 'Make one API call per note (can be expensive for large vaults)' });
+		warningList.createEl('li', { text: 'Make one or more API calls per note (long notes use multiple chunks)' });
 		warningList.createEl('li', { text: 'Take a long time (approx. 10-15 seconds per note)' });
 		warningList.createEl('li', { text: 'May hit rate limits depending on your API plan' });
 		vaultWarning.createEl('em', { text: 'Already analyzed notes will be skipped unless changed.' });
@@ -622,7 +713,7 @@ export class SettingsTab extends PluginSettingTab {
 
 		new Setting(vaultButtonContainer)
 			.setName('Analyze entire vault')
-			.setDesc(`${this.plugin.app.vault.getMarkdownFiles().length} markdown files in vault`)
+			.setDesc(`${getFilesInAnalysisScope(this.plugin).length} markdown files in the configured analysis scope`)
 			.addButton(button => {
 				const updateButtonState = () => {
 					if (isAnalyzingVault()) {
@@ -641,10 +732,10 @@ export class SettingsTab extends PluginSettingTab {
 						// Button will update after analysis stops
 						activeWindow.setTimeout(updateButtonState, 1000);
 					} else {
-						const fileCount = this.plugin.app.vault.getMarkdownFiles().length;
+						const fileCount = getFilesInAnalysisScope(this.plugin).length;
 						const message = `Analyze ${fileCount} notes in your vault?\n\n` +
 							`Estimated time: ${Math.ceil(fileCount * 10 / 60)} - ${Math.ceil(fileCount * 15 / 60)} minutes\n` +
-							`Estimated API calls: up to ${fileCount}\n\n` +
+							`API calls: at least ${fileCount}; long notes require multiple chunks\n\n` +
 							`You can cancel at any time.`;
 
 						void new ConfirmModal(this.app, message, async () => {

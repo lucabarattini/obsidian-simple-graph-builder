@@ -115,6 +115,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	ollamaModel: 'gpt-oss:20b',
 	ollamaHost: 'http://localhost:11434',
 	extractionMode: 'standard',
+	analysisFolder: '',
 	autoAnalyzeOnSave: false,
 	// Smart Search model settings
 	useSeparateSmartSearchModel: false,
@@ -126,6 +127,12 @@ export const DEFAULT_SETTINGS: Settings = {
 	// View settings
 	openGraphInMain: false,
 	graphMinDegree: 0,
+	graphTopNodeLimit: 0,
+	graphColorMode: 'entityType',
+	// Generated Obsidian backlinks
+	backlinkMinSharedEntities: 2,
+	backlinkMaxLinksPerNote: 3,
+	backlinkMaxEntityDocumentFrequency: 0.25,
 	// Embedding-based resolution (opt-in)
 	enableEmbeddings: false,
 	embeddingProvider: 'openai',

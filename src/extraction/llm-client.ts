@@ -214,6 +214,7 @@ async function callClaude(apiKey: string, model: string, prompt: string): Promis
 		body: JSON.stringify({
 			model: model,
 			messages: [{ role: 'user', content: prompt }],
+			max_tokens: 4096,
 		}),
 	});
 
@@ -225,6 +226,19 @@ async function callClaude(apiKey: string, model: string, prompt: string): Promis
 }
 
 async function callOpenAI(apiKey: string, model: string, prompt: string): Promise<string> {
+	const body: Record<string, unknown> = {
+		model,
+		messages: [{ role: 'user', content: prompt }],
+		max_completion_tokens: 4096,
+	};
+	// GPT-5 reasoning models only accept their default temperature.
+	if (!model.toLowerCase().startsWith('gpt-5')) {
+		body.temperature = 0.3;
+	}
+	if (/^gpt-5(?:-(?:mini|nano))?(?:-2025|$)/i.test(model)) {
+		body.reasoning_effort = 'minimal';
+	}
+
 	const res = await requestUrl({
 		url: 'https://api.openai.com/v1/chat/completions',
 		method: 'POST',
@@ -232,11 +246,7 @@ async function callOpenAI(apiKey: string, model: string, prompt: string): Promis
 			'Content-Type': 'application/json',
 			'Authorization': `Bearer ${apiKey}`,
 		},
-		body: JSON.stringify({
-			model: model,
-			messages: [{ role: 'user', content: prompt }],
-			temperature: 0.3,
-		}),
+		body: JSON.stringify(body),
 	});
 
 	const data = res.json;
@@ -259,6 +269,7 @@ async function callGemini(apiKey: string, model: string, prompt: string): Promis
 			contents: [{ parts: [{ text: prompt }] }],
 			generationConfig: {
 				temperature: 0.3,
+				maxOutputTokens: 4096,
 			},
 		}),
 	});
@@ -305,6 +316,7 @@ async function callOllama(host: string, model: string, prompt: string): Promise<
 			stream: false,
 			options: {
 				temperature: 0.3,
+				num_predict: 4096,
 			},
 		}),
 	});

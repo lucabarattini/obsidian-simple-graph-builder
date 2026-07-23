@@ -10,23 +10,22 @@ import { ExtractionMode, VALID_ENTITY_TYPES } from '../types';
  */
 export function chunkContent(content: string, targetTokens = 500): string[] {
 	const chunkSize = targetTokens * 3; // ~1500 chars per chunk
-
-	const paragraphs = content.split(/\n\n+/);
 	const chunks: string[] = [];
-	let current = '';
+	let remaining = content.trim();
 
-	for (const para of paragraphs) {
-		if (current.length + para.length > chunkSize && current) {
-			chunks.push(current.trim());
-			current = para;
-		} else {
-			current += (current ? '\n\n' : '') + para;
-		}
+	while (remaining.length > chunkSize) {
+		const searchFloor = Math.floor(chunkSize * 0.6);
+		let splitAt = remaining.lastIndexOf('\n\n', chunkSize);
+		if (splitAt < searchFloor) splitAt = remaining.lastIndexOf('\n', chunkSize);
+		if (splitAt < searchFloor) splitAt = remaining.lastIndexOf(' ', chunkSize);
+		if (splitAt < searchFloor) splitAt = chunkSize;
+
+		const chunk = remaining.slice(0, splitAt).trim();
+		if (chunk) chunks.push(chunk);
+		remaining = remaining.slice(splitAt).trimStart();
 	}
 
-	if (current.trim()) {
-		chunks.push(current.trim());
-	}
+	if (remaining) chunks.push(remaining);
 
 	// Ensure at least one chunk
 	return chunks.length > 0 ? chunks : [content];
@@ -88,6 +87,8 @@ ${existingNodeNames.slice(0, 100).join(', ')}${existingNodeNames.length > 100 ? 
 4. Korean: Remove particles (Josa), prefer Korean for Korean concepts
 5. Keep names SHORT (1-4 words)
 6. Skip trivial terms ("thing", "item", "data", "information")
+7. For journals, prioritize explicitly stated recurring themes, emotions, values, goals, decisions, relationship dynamics, stressors, and coping methods
+8. Stay grounded in the text. Do not infer medical diagnoses or sensitive traits that the writer did not explicitly state
 
 ${existingSection}
 
@@ -139,6 +140,13 @@ You MUST explore multiple paths to provide comprehensive answers. Follow this pr
 4. **Source Collection**: Use get_source_notes for nodes that directly answer the question
 
 5. **Synthesis**: Combine findings from ALL explored paths into a comprehensive answer
+
+**Personal journal questions:**
+- Treat patterns as hypotheses to inspect, not facts about the writer
+- Separate repeated, directly supported observations from interpretation
+- Surface tensions or contradictory evidence instead of forcing one narrative
+- Never infer a diagnosis; use neutral language such as "recurring theme" or "possible pattern"
+- Cite the source notes that support every important personal claim
 
 **Common Mistakes to Avoid:**
 - ❌ Stopping after finding one relevant node

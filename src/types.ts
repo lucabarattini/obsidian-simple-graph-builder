@@ -310,6 +310,7 @@ export interface Settings {
 	ollamaHost: string;     // Ollama server URL (default: http://localhost:11434)
 	// Extraction settings
 	extractionMode: ExtractionMode;  // Controls extraction thoroughness
+	analysisFolder: string;          // Optional vault-relative folder scope
 	// Auto-analysis
 	autoAnalyzeOnSave: boolean;  // Analyze notes automatically when saved
 	// Smart Search model settings (separate from extraction)
@@ -322,6 +323,12 @@ export interface Settings {
 	// View settings
 	openGraphInMain: boolean;    // Open graph view in main window instead of sidebar
 	graphMinDegree: number;      // Minimum connections to show node in graph (default: 0)
+	graphTopNodeLimit: number;   // Show only the N most connected nodes (0 = all)
+	graphColorMode: 'entityType' | 'community';
+	// Generated Obsidian backlinks
+	backlinkMinSharedEntities: number;
+	backlinkMaxLinksPerNote: number;
+	backlinkMaxEntityDocumentFrequency: number;
 	// Embedding-based entity resolution (opt-in)
 	enableEmbeddings: boolean;            // default: false - embeddings are opt-in to avoid API costs
 	embeddingProvider: EmbeddingProvider; // default: 'openai'

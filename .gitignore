@@ -24,5 +24,8 @@ data.json
 # Coding Assistants
 CLAUDE.md
 
+# Local/private vault documentation
+/docs/PERSONAL_VAULT_GUIDE.md
+
 # Development planning documents
 PLAN*.md

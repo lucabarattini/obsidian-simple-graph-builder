@@ -292,6 +292,19 @@ async function callOpenAIWithTools(
 		};
 	});
 
+	const requestBody: Record<string, unknown> = {
+		model,
+		messages: openaiMessages,
+		tools: openaiTools,
+		max_completion_tokens: 4096,
+	};
+	if (!model.toLowerCase().startsWith('gpt-5')) {
+		requestBody.temperature = 0.3;
+	}
+	if (/^gpt-5(?:-(?:mini|nano))?(?:-2025|$)/i.test(model)) {
+		requestBody.reasoning_effort = 'low';
+	}
+
 	const res = await requestUrl({
 		url: 'https://api.openai.com/v1/chat/completions',
 		method: 'POST',
@@ -299,12 +312,7 @@ async function callOpenAIWithTools(
 			'Content-Type': 'application/json',
 			'Authorization': `Bearer ${apiKey}`,
 		},
-		body: JSON.stringify({
-			model,
-			messages: openaiMessages,
-			tools: openaiTools,
-			temperature: 0.3,
-		}),
+		body: JSON.stringify(requestBody),
 	});
 
 	const data = res.json;
@@ -513,6 +521,7 @@ async function callOllamaWithTools(
 				stream: false,
 				options: {
 					temperature: 0.3,
+					num_predict: 4096,
 				},
 			}),
 		});
@@ -552,6 +561,7 @@ async function callOllamaWithTools(
 				stream: false,
 				options: {
 					temperature: 0.3,
+					num_predict: 4096,
 				},
 			}),
 		});

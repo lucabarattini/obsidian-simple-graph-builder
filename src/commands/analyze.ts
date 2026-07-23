@@ -1,9 +1,9 @@
-import { Notice, MarkdownView, TFile } from 'obsidian';
+import { Notice, MarkdownView, TFile, normalizePath } from 'obsidian';
 import SimpleGraphBuilderPlugin from '../main';
 import { loadHashes, saveHashes, computeHash, hasNoteChanged, updateNoteHash, removeNoteHash, clearHashes } from '../graph/hashes';
 import { mergeExtractionIntoCache, mergeExtractionIntoCacheWithResolution, mergeInternalLinksIntoCache, removeNoteFromCache } from '../graph/merge';
-import { truncateContent } from '../extraction/prompts';
 import { extractOntologyChunked, settingsToExtractionOptions, ExtractionError } from '../extraction/llm-client';
+import { stripManagedRelatedNotes } from '../graph/backlinks';
 
 // Vault analysis state (encapsulated to avoid module-level mutable variables)
 const vaultAnalysisState = {
@@ -20,16 +20,17 @@ export async function analyzeCurrentNote(plugin: SimpleGraphBuilderPlugin): Prom
 
 	const file = activeView.file;
 	const content = await plugin.app.vault.read(file);
+	const semanticContent = stripManagedRelatedNotes(content);
 
 	// Check if content is too short
-	if (content.trim().length < 50) {
+	if (semanticContent.trim().length < 50) {
 		new Notice('Note is too short to analyze');
 		return;
 	}
 
 	// Check if note has changed
 	const hashes = await loadHashes(plugin);
-	const currentHash = computeHash(content);
+	const currentHash = computeHash(semanticContent);
 
 	if (!hasNoteChanged(hashes, file.path, currentHash)) {
 		new Notice('Note has not changed since last analysis');
@@ -55,10 +56,13 @@ export async function analyzeCurrentNote(plugin: SimpleGraphBuilderPlugin): Prom
 		const existingNodeNames = plugin.graphCache.getExistingNodeNames();
 
 		// Use chunked extraction for better handling of long notes
-		const truncatedContent = truncateContent(content);
 		const options = settingsToExtractionOptions(plugin.settings);
 		const mode = plugin.settings.extractionMode || 'standard';
-		const { result, chunkCount } = await extractOntologyChunked(options, truncatedContent, existingNodeNames, mode);
+		const { result, chunkCount } = await extractOntologyChunked(options, semanticContent, existingNodeNames, mode);
+
+		// Replace this note's previous contribution only after extraction succeeds.
+		// This prevents deleted or renamed concepts from lingering in the graph.
+		removeNoteFromCache(plugin.graphCache, file.path);
 
 		// Hide loading notice
 		loadingNotice.hide();
@@ -104,7 +108,7 @@ export async function analyzeCurrentNote(plugin: SimpleGraphBuilderPlugin): Prom
 		}
 
 		// Process internal links ([[wikilinks]])
-		const linksAdded = mergeInternalLinksIntoCache(plugin.graphCache, plugin.app, file, content);
+		const linksAdded = mergeInternalLinksIntoCache(plugin.graphCache, plugin.app, file, semanticContent);
 
 		// Update hash
 		const updatedHashes = updateNoteHash(hashes, file.path, currentHash);
@@ -212,14 +216,15 @@ export async function analyzeFile(
 
 	try {
 		const content = await plugin.app.vault.read(file);
+		const semanticContent = stripManagedRelatedNotes(content);
 
 		// Check if content is too short
-		if (content.trim().length < 50) {
+		if (semanticContent.trim().length < 50) {
 			return { success: false, skipped: true, nodesAdded: 0, nodesMerged: 0, relationshipsAdded: 0 };
 		}
 
 		// Check if note has changed
-		const currentHash = computeHash(content);
+		const currentHash = computeHash(semanticContent);
 		if (skipUnchanged && !hasNoteChanged(hashes, file.path, currentHash)) {
 			return { success: false, skipped: true, nodesAdded: 0, nodesMerged: 0, relationshipsAdded: 0 };
 		}
@@ -228,10 +233,12 @@ export async function analyzeFile(
 		const existingNodeNames = plugin.graphCache.getExistingNodeNames();
 
 		// Use chunked extraction
-		const truncatedContent = truncateContent(content);
 		const extractionOptions = settingsToExtractionOptions(plugin.settings);
 		const mode = plugin.settings.extractionMode || 'standard';
-		const { result } = await extractOntologyChunked(extractionOptions, truncatedContent, existingNodeNames, mode);
+		const { result } = await extractOntologyChunked(extractionOptions, semanticContent, existingNodeNames, mode);
+
+		// Replace stale entities/relationships only after a successful API response.
+		removeNoteFromCache(plugin.graphCache, file.path);
 
 		// Merge results into graph cache with resolution if embeddings enabled
 		let nodesAdded: number;
@@ -259,7 +266,7 @@ export async function analyzeFile(
 		}
 
 		// Process internal links ([[wikilinks]])
-		mergeInternalLinksIntoCache(plugin.graphCache, plugin.app, file, content);
+		mergeInternalLinksIntoCache(plugin.graphCache, plugin.app, file, semanticContent);
 
 		// Update hash in the passed hashes object
 		const existingIndex = hashes.hashes.findIndex(h => h.path === file.path);
@@ -319,7 +326,7 @@ export async function analyzeEntireVault(
 	vaultAnalysisState.isCancelled = false;
 
 	// Get all markdown files
-	const files = plugin.app.vault.getMarkdownFiles();
+	const files = getFilesInAnalysisScope(plugin);
 	const total = files.length;
 	let analyzed = 0;
 	let skipped = 0;
@@ -400,6 +407,7 @@ export async function autoAnalyzeFile(plugin: SimpleGraphBuilderPlugin, file: TF
 	if (!plugin.settings.autoAnalyzeOnSave) {
 		return;
 	}
+	if (!isFileInAnalysisScope(plugin, file)) return;
 
 	// Check API configuration
 	const { apiProvider, apiKey, ollamaModel } = plugin.settings;
@@ -433,6 +441,17 @@ export async function autoAnalyzeFile(plugin: SimpleGraphBuilderPlugin, file: TF
 		loadingNotice.hide();
 		console.error('Auto-analysis failed:', error);
 	}
+}
+
+export function getFilesInAnalysisScope(plugin: SimpleGraphBuilderPlugin): TFile[] {
+	return plugin.app.vault.getMarkdownFiles().filter(file => isFileInAnalysisScope(plugin, file));
+}
+
+function isFileInAnalysisScope(plugin: SimpleGraphBuilderPlugin, file: TFile): boolean {
+	const configuredFolder = plugin.settings.analysisFolder.trim();
+	if (!configuredFolder) return true;
+	const folder = normalizePath(configuredFolder).replace(/^\/+|\/+$/g, '');
+	return file.path === `${folder}.md` || file.path.startsWith(`${folder}/`);
 }
 
 // Helper function

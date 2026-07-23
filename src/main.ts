@@ -8,11 +8,13 @@ import { GraphCache } from './graph/cache';
 import { analyzeCurrentNote, removeCurrentNoteFromGraph, clearAllGraphData, autoAnalyzeFile } from './commands/analyze';
 import { openSearchModal } from './commands/search';
 import { openSmartSearch } from './commands/smart-search';
+import { openBacklinkSuggestions } from './commands/backlinks';
 
 export default class SimpleGraphBuilderPlugin extends Plugin {
 	settings: Settings;
 	graphCache: GraphCache;
 	private statusBarItem: HTMLElement | null = null;
+	private managedWritePaths = new Set<string>();
 
 	// Debounced auto-analyze to avoid multiple calls on rapid saves
 	private debouncedAutoAnalyze = debounce(
@@ -36,6 +38,7 @@ export default class SimpleGraphBuilderPlugin extends Plugin {
 		this.registerEvent(
 			this.app.vault.on('modify', (file) => {
 				if (file instanceof TFile && file.extension === 'md') {
+					if (this.managedWritePaths.delete(file.path)) return;
 					this.debouncedAutoAnalyze(file);
 				}
 			})
@@ -84,6 +87,12 @@ export default class SimpleGraphBuilderPlugin extends Plugin {
 			callback: () => void openSmartSearch(this),
 		});
 
+		this.addCommand({
+			id: 'review-backlink-suggestions',
+			name: 'Review related-note backlink suggestions',
+			callback: () => openBacklinkSuggestions(this),
+		});
+
 		// Add settings tab
 		this.addSettingTab(new SettingsTab(this.app, this));
 
@@ -103,6 +112,13 @@ export default class SimpleGraphBuilderPlugin extends Plugin {
 					.setTitle('Open graph view')
 					.setIcon('git-fork')
 					.onClick(() => void this.activateGraphView())
+			);
+
+			menu.addItem((item) =>
+				item
+					.setTitle('Review backlink suggestions')
+					.setIcon('links-coming-in')
+					.onClick(() => openBacklinkSuggestions(this))
 			);
 
 			menu.showAtMouseEvent(evt);
@@ -185,6 +201,12 @@ export default class SimpleGraphBuilderPlugin extends Plugin {
 	 */
 	openSearchWithQuery(query: string): void {
 		openSearchModal(this, query);
+	}
+
+	/** Avoid auto-analysis when the plugin only updates its managed links block. */
+	markManagedWrite(path: string): void {
+		this.managedWritePaths.add(path);
+		activeWindow.setTimeout(() => this.managedWritePaths.delete(path), 5000);
 	}
 
 	onunload(): void {
