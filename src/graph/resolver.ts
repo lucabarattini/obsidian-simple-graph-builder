@@ -2,6 +2,7 @@ import { OntologyNode, RawExtractionNode, ResolutionResult, ResolutionStats, Set
 import { GraphCache } from './cache';
 import { getEmbeddings, settingsToEmbeddingOptions, verifyEntityMatch, settingsToExtractionOptions, EmbeddingOptions } from '../extraction/llm-client';
 import { generateNodeId, generateEdgeId } from './merge';
+import { canMergeEntityNames } from './quality';
 
 /**
  * EntityResolver implements a multi-stage hybrid entity resolution pipeline.
@@ -241,8 +242,10 @@ export class EntityResolver {
 			rawNode.entityType
 		);
 
-		if (highMatches.length > 0) {
-			const best = highMatches[0];
+		const best = highMatches.find(match =>
+			canMergeEntityNames(rawNode, match.node.properties.name)
+		);
+		if (best) {
 			this.stats.embeddingHigh++;
 
 			this.cache.addAliasToNode(best.node.id, name);
@@ -267,6 +270,7 @@ export class EntityResolver {
 			);
 
 			for (const candidate of candidates) {
+				if (!canMergeEntityNames(rawNode, candidate.node.properties.name)) continue;
 				const candidateDescription = candidate.node.properties.description;
 				const isMatch = await verifyEntityMatch(
 					settingsToExtractionOptions(this.settings),

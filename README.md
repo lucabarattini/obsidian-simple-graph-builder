@@ -25,6 +25,9 @@ This design provides **structured entity classification with expressive relation
 - **Korean Language Support**: Bigram Jaccard similarity for robust Korean text matching (handles particles and spacing variations)
 - **Interactive Graph View**: Visualize your knowledge graph with fCoSE force-directed layout
 - **Hub & Community Insights**: Show top-degree nodes, detect local communities, and surface bridge concepts
+- **Cached Source-Folder Scopes**: Isolate entities, relationships, insights, and backlink candidates from one folder without rerunning extraction
+- **Journal Meaning Lens**: Rank entities by recurrence across distinct notes and suppress dates, weather, narrator pronouns, and template scaffolding
+- **Reversible Graph Corrections**: Right-click entities to correct their cached details or hide them from the meaning view
 - **Safe Related-Note Backlinks**: Review reciprocal link suggestions with timestamped backups and idempotent managed sections
 - **Large Graph Support**: Optimized for thousands of nodes with fast rendering
 - **Note Neighborhood Panel**: See connections for the current note in a sidebar
@@ -130,6 +133,8 @@ Right-click a node to:
 - **Chunked Processing**: Long notes are automatically split into ~500 token chunks and processed in parallel (max 3 concurrent)
 - **Auto-analyze on save**: Automatically analyze notes when you save them (2-second debounce)
 - **Analyze entire vault**: Batch analyze all notes with progress tracking and cancellation support
+- **Journal meaning cleanup**: Deterministically removes routine metadata even if an extraction model returns it
+- **Rebuild configured analysis folder**: Force fresh extraction for one folder without discarding graph data from other folders
 
 ### Smart Search Model
 You can configure a separate model for Smart Search queries, allowing you to use faster/cheaper models for extraction while using more capable models for search:
@@ -156,8 +161,30 @@ Enable embedding-based entity resolution for intelligent deduplication:
 
 ### View Settings
 - **Open graph in main window**: Toggle to open the graph visualization in a main tab instead of the right sidebar
+- **Source notes**: Filter the graph and recalculate its hubs and communities from one cached source folder
+- **Rank across notes**: Prioritize entities recurring in multiple distinct notes instead of entities with many edges inside one note
+- **Minimum notes**: Require a theme to occur in a chosen number of source notes
+- **Hide journal metadata**: Suppress dates, times, weather, and generic journal scaffolding from the current view
+- **Connected meaning map**: Remove isolated entities left behind by the current filters
+- **Center main cluster**: Focus and center the largest connected component while keeping smaller components cached
 - **Show strongest hubs**: Limit the graph to the top 25, 50, 100, or 200 entities by degree
 - **Graph color**: Color by entity type or locally detected community
+
+The graph toolbar discovers source folders from persisted note provenance. Changing
+the source folder is local and does not call the configured AI provider.
+Parallel relationships are rendered as one weighted edge, and graph labels use
+display-only title casing without changing stored entity names or note text.
+
+Private name substitutions can be stored in the plugin's local
+`entityPseudonyms` setting. They are applied before graph resolution and never
+rewrite the source Markdown.
+
+### Related-Note Backlinks
+- Run **Review related-note backlink suggestions**
+- Choose a **Source folder** to require both notes in every candidate pair to be inside that folder
+- Review and apply the desired reciprocal links; every changed note is backed up first
+
+Folder scoping reuses the existing graph cache, so it does not require re-analysis.
 
 ### Data Management
 - View graph statistics (nodes by entity type, total relationships)
@@ -190,9 +217,13 @@ Enable embedding-based entity resolution for intelligent deduplication:
 3. View results with command: `Open graph view`
 
 ### Graph View
+- Use **Source notes** to show all analyzed notes or a single folder
+- Use **Rank → Across notes** and **Min. notes** for a recurrence-oriented meaning view
+- Keep **Connected only** enabled for a cleaner map without orphaned filtered nodes
+- Keep **Main cluster** enabled for the centered meaning map; turn it off to reveal geographic and smaller side clusters
 - **Click** a node to highlight its connections
 - **Double-click** a node to open search with that term
-- **Right-click** a node to access merge options
+- **Right-click** a node to correct its cached name/type/description, inspect sources, or hide it
 - **Hover** on edges to see relationship type and detail
 - **Click** the background to reset highlights
 - **Scroll** to zoom in/out

@@ -7,6 +7,8 @@ import {
 	getNoteDisplayName,
 	upsertManagedRelatedNotes,
 } from '../graph/backlinks';
+import { filterGraphBySourceFolder, getGraphSourceFolders } from '../graph/scope';
+import { GraphData } from '../types';
 import { ConfirmModal } from '../ui/confirm-modal';
 
 const BACKUP_ROOT = '.simple-graph-builder-backups';
@@ -18,32 +20,22 @@ export function openBacklinkSuggestions(plugin: SimpleGraphBuilderPlugin): void 
 		return;
 	}
 
-	const suggestions = buildBacklinkSuggestions(graph, {
-		minSharedEntities: plugin.settings.backlinkMinSharedEntities,
-		maxLinksPerNote: plugin.settings.backlinkMaxLinksPerNote,
-		maxEntityDocumentFrequency: plugin.settings.backlinkMaxEntityDocumentFrequency,
-		limit: 250,
-	});
-
-	if (suggestions.length === 0) {
-		new Notice('No note pairs meet the current backlink thresholds.');
-		return;
-	}
-
-	new BacklinkReviewModal(plugin, suggestions).open();
+	new BacklinkReviewModal(plugin, graph).open();
 }
 
 class BacklinkReviewModal extends Modal {
 	private plugin: SimpleGraphBuilderPlugin;
-	private suggestions: BacklinkSuggestion[];
+	private graph: GraphData;
+	private suggestions: BacklinkSuggestion[] = [];
 	private selected = new Set<number>();
 	private selectionLabel: HTMLElement | null = null;
+	private scopeSummary: HTMLElement | null = null;
+	private listEl: HTMLElement | null = null;
 
-	constructor(plugin: SimpleGraphBuilderPlugin, suggestions: BacklinkSuggestion[]) {
+	constructor(plugin: SimpleGraphBuilderPlugin, graph: GraphData) {
 		super(plugin.app);
 		this.plugin = plugin;
-		this.suggestions = suggestions;
-		suggestions.forEach((_, index) => this.selected.add(index));
+		this.graph = graph;
 	}
 
 	onOpen(): void {
@@ -55,6 +47,27 @@ class BacklinkReviewModal extends Modal {
 			text: 'Suggestions are ranked locally from shared extracted entities. Applying a pair adds a reciprocal Obsidian link to both notes.',
 		});
 
+		const scopeControl = contentEl.createDiv({ cls: 'sgb-backlink-scope' });
+		scopeControl.createEl('label', { text: 'Source folder' });
+		const scopeSelect = scopeControl.createEl('select');
+		scopeSelect.createEl('option', { value: '', text: 'All analyzed notes' });
+		const sourceFolders = getGraphSourceFolders(this.graph);
+		for (const folder of sourceFolders) {
+			scopeSelect.createEl('option', { value: folder, text: folder });
+		}
+		const savedSourceFolder = this.plugin.settings.backlinkSourceFolder;
+		if (savedSourceFolder && !sourceFolders.includes(savedSourceFolder)) {
+			scopeSelect.createEl('option', { value: savedSourceFolder, text: savedSourceFolder });
+		}
+		scopeSelect.value = savedSourceFolder;
+		scopeSelect.title = 'Both notes in every suggestion must be inside this folder. Uses cached analysis only.';
+		this.scopeSummary = scopeControl.createSpan();
+		scopeSelect.addEventListener('change', () => {
+			this.plugin.settings.backlinkSourceFolder = scopeSelect.value;
+			void this.plugin.saveSettings();
+			this.rebuildSuggestions();
+		});
+
 		const warning = contentEl.createDiv({ cls: 'sgb-backlink-warning' });
 		warning.createEl('strong', { text: 'Safe write: ' });
 		warning.appendText(`Every changed note is copied to ${BACKUP_ROOT} before editing. Generated sections can be regenerated without duplicating content.`);
@@ -62,16 +75,16 @@ class BacklinkReviewModal extends Modal {
 		const controls = contentEl.createDiv({ cls: 'sgb-backlink-controls' });
 		controls.createEl('button', { text: 'Select all' }).addEventListener('click', () => {
 			this.selected = new Set(this.suggestions.map((_, index) => index));
-			this.renderSuggestionList(list);
+			this.renderSuggestionList();
 		});
 		controls.createEl('button', { text: 'Select none' }).addEventListener('click', () => {
 			this.selected.clear();
-			this.renderSuggestionList(list);
+			this.renderSuggestionList();
 		});
 		this.selectionLabel = controls.createSpan();
 
-		const list = contentEl.createDiv({ cls: 'sgb-backlink-list' });
-		this.renderSuggestionList(list);
+		this.listEl = contentEl.createDiv({ cls: 'sgb-backlink-list' });
+		this.rebuildSuggestions();
 
 		const buttons = contentEl.createDiv({ cls: 'modal-button-container' });
 		buttons.createEl('button', { text: 'Cancel' }).addEventListener('click', () => this.close());
@@ -96,12 +109,43 @@ class BacklinkReviewModal extends Modal {
 		});
 	}
 
-	private renderSuggestionList(container: HTMLElement): void {
-		container.empty();
+	private rebuildSuggestions(): void {
+		const scopedGraph = filterGraphBySourceFolder(
+			this.graph,
+			this.plugin.settings.backlinkSourceFolder
+		);
+		this.suggestions = buildBacklinkSuggestions(scopedGraph, {
+			minSharedEntities: this.plugin.settings.backlinkMinSharedEntities,
+			maxLinksPerNote: this.plugin.settings.backlinkMaxLinksPerNote,
+			maxEntityDocumentFrequency: this.plugin.settings.backlinkMaxEntityDocumentFrequency,
+			limit: 250,
+		});
+		this.selected = new Set(this.suggestions.map((_, index) => index));
+
+		const noteCount = new Set(
+			scopedGraph.nodes.flatMap(node => node.sourceNotes)
+		).size;
+		this.scopeSummary?.setText(
+			`${noteCount} analyzed note${noteCount === 1 ? '' : 's'} · ${this.suggestions.length} suggestion${this.suggestions.length === 1 ? '' : 's'}`
+		);
+		this.renderSuggestionList();
+	}
+
+	private renderSuggestionList(): void {
+		if (!this.listEl) return;
+		this.listEl.empty();
 		this.updateSelectionLabel();
 
+		if (this.suggestions.length === 0) {
+			this.listEl.createDiv({
+				cls: 'sgb-backlink-empty',
+				text: 'No note pairs in this folder meet the current shared-entity thresholds.',
+			});
+			return;
+		}
+
 		this.suggestions.forEach((suggestion, index) => {
-			const row = container.createEl('label', { cls: 'sgb-backlink-row' });
+			const row = this.listEl!.createEl('label', { cls: 'sgb-backlink-row' });
 			const checkbox = row.createEl('input');
 			checkbox.type = 'checkbox';
 			checkbox.checked = this.selected.has(index);

@@ -202,6 +202,19 @@ function detectCommunities(
 }
 
 export function getCommunityColor(community: number): string {
-	const hue = (community * 137.508) % 360;
-	return `hsl(${hue.toFixed(1)}, 68%, 54%)`;
+	const palette = [
+		'#5b8ff9',
+		'#61ddaa',
+		'#9661bc',
+		'#f6bd16',
+		'#65789b',
+		'#f6903d',
+		'#6dc8ec',
+		'#e86452',
+		'#7262fd',
+		'#78d3f8',
+		'#945fb9',
+		'#ff99c3',
+	];
+	return palette[Math.max(0, community - 1) % palette.length];
 }

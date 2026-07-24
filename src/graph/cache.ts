@@ -94,6 +94,31 @@ export class GraphCache {
 
 		this.rebuildIndexes();
 		this.loaded = true;
+		await this.pruneOrphanedEmbeddings();
+	}
+
+	/**
+	 * Rebuild an embedding index when it still references entities that have
+	 * already been removed from the semantic graph. This keeps privacy edits and
+	 * manual entity cleanup from being reintroduced by a later cache flush.
+	 */
+	private async pruneOrphanedEmbeddings(): Promise<void> {
+		if (!this.embeddingIndex) return;
+		const nodeIds = new Set(this.nodes.map(node => node.id));
+		const orphanedIds = this.embeddingIndex.nodeIds.filter(nodeId => !nodeIds.has(nodeId));
+		if (orphanedIds.length === 0) return;
+
+		try {
+			await this.ensureEmbeddingsLoaded();
+			for (const nodeId of orphanedIds) {
+				this.removeEmbedding(nodeId);
+			}
+			await this.saveEmbeddings();
+			await this.flush();
+			console.debug(`Removed ${orphanedIds.length} orphaned embeddings`);
+		} catch (error) {
+			console.warn('Could not prune orphaned embeddings:', error);
+		}
 	}
 
 	/**

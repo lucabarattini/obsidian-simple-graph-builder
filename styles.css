@@ -63,7 +63,14 @@
 	width: 100%;
 	flex: 1 1 auto;
 	min-height: 0;
-	background-color: var(--background-primary);
+	background:
+		radial-gradient(
+			circle at 50% 42%,
+			color-mix(in srgb, var(--interactive-accent) 8%, transparent),
+			transparent 48%
+		),
+		var(--background-primary);
+	box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-normal) 5%, transparent);
 }
 
 .graph-empty-state,
@@ -620,10 +627,11 @@
 	display: none;
 	background: var(--background-primary);
 	border: 1px solid var(--background-modifier-border);
-	border-radius: 6px;
-	padding: 8px 12px;
+	border-radius: 10px;
+	padding: 10px 13px;
 	font-size: 12px;
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+	max-width: 320px;
 }
 
 .graph-tooltip.visible {
@@ -667,9 +675,13 @@
 	align-items: center;
 	gap: 10px;
 	flex-wrap: wrap;
-	padding: 8px 10px;
+	padding: 9px 12px;
 	border-bottom: 1px solid var(--background-modifier-border);
-	background: var(--background-secondary);
+	background: color-mix(
+		in srgb,
+		var(--background-secondary) 92%,
+		var(--interactive-accent) 8%
+	);
 	flex: 0 0 auto;
 }
 
@@ -683,6 +695,20 @@
 
 .sgb-graph-controls input[type='number'] {
 	width: 58px;
+}
+
+.sgb-graph-controls .sgb-checkbox-control {
+	cursor: pointer;
+}
+
+.sgb-graph-controls select {
+	max-width: min(280px, 55vw);
+}
+
+.sgb-graph-controls select,
+.sgb-graph-controls input[type='number'],
+.sgb-graph-controls button {
+	border-radius: 7px;
 }
 
 .sgb-graph-controls button.is-active {
@@ -798,6 +824,24 @@
 	font-size: 0.85em;
 }
 
+.sgb-backlink-scope {
+	display: grid;
+	grid-template-columns: auto minmax(220px, 1fr) auto;
+	align-items: center;
+	gap: 8px;
+	margin: 10px 0;
+}
+
+.sgb-backlink-scope label {
+	font-size: 0.85em;
+	font-weight: 600;
+}
+
+.sgb-backlink-scope span {
+	color: var(--text-muted);
+	font-size: 0.8em;
+}
+
 .sgb-backlink-controls {
 	display: flex;
 	align-items: center;
@@ -816,6 +860,12 @@
 	overflow-y: auto;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 6px;
+}
+
+.sgb-backlink-empty {
+	padding: 24px 12px;
+	text-align: center;
+	color: var(--text-muted);
 }
 
 .sgb-backlink-row {
@@ -850,6 +900,38 @@
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+.sgb-entity-edit-modal {
+	min-width: min(620px, 90vw);
+}
+
+.sgb-entity-description-input {
+	width: min(360px, 55vw);
+	resize: vertical;
+}
+
+.sgb-entity-source-summary {
+	margin: 12px 0;
+	padding: 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	color: var(--text-muted);
+	font-size: 0.8em;
+	max-height: 160px;
+	overflow-y: auto;
+}
+
+.sgb-entity-source-summary strong {
+	display: block;
+	margin-bottom: 5px;
+	color: var(--text-normal);
+}
+
+@media (max-width: 600px) {
+	.sgb-backlink-scope {
+		grid-template-columns: 1fr;
+	}
 }
 
 /* Smart Search Modal - Additional Styles */

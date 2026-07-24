@@ -1,10 +1,19 @@
-import { ItemView, WorkspaceLeaf, Notice } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, Menu } from 'obsidian';
 import cytoscape from 'cytoscape';
 import fcose from 'cytoscape-fcose';
 import SimpleGraphBuilderPlugin from '../main';
 import { openSearchModal } from '../commands/search';
 import { getEntityTypeColor } from '../types';
 import { analyzeGraph, getCommunityColor, GraphAnalytics, GraphNodeMetrics } from '../graph/analytics';
+import { filterGraphByNodePredicate, filterGraphBySourceFolder, getGraphSourceFolders } from '../graph/scope';
+import { isLikelyJournalMetadataNode } from '../graph/quality';
+import {
+	aggregateGraphEdges,
+	retainConnectedNodes,
+	retainLargestConnectedComponent,
+	toTitleCaseLabel,
+} from '../graph/presentation';
+import { EntityEditModal } from './entity-edit-modal';
 
 // Register fCoSE layout extension
 cytoscape.use(fcose);
@@ -19,81 +28,98 @@ const MAX_RENDER_ELEMENTS = 2000; // maximum elements to render
 // Graph Styles
 // ============================================
 
-const GRAPH_STYLES: cytoscape.StylesheetStyle[] = [
-	// Base node style
-	{
-		selector: 'node',
-		style: {
-			'label': 'data(name)',
-			'text-valign': 'bottom',
-			'text-halign': 'center',
-			'text-margin-y': 5,
-			'font-size': '10px',
-			'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-			'color': '#a8a8a8',
-			'text-wrap': 'ellipsis',
-			'text-max-width': '80px',
-			'width': 'mapData(degree, 0, 20, 10, 34)',
-			'height': 'mapData(degree, 0, 20, 10, 34)',
-			'border-width': 0,
-			'background-opacity': 0.9,
-			'background-color': 'data(color)',
+function getGraphStyles(container: HTMLElement): cytoscape.StylesheetStyle[] {
+	const computedStyle = activeWindow.getComputedStyle(container);
+	const themeColor = (variable: string, fallback: string): string =>
+		computedStyle.getPropertyValue(variable).trim() || fallback;
+	const textColor = themeColor('--text-normal', '#e5e7eb');
+	const backgroundColor = themeColor('--background-primary', '#1e2228');
+	const edgeColor = themeColor('--text-muted', '#94a3b8');
+
+	return [
+		{
+			selector: 'node',
+			style: {
+				'label': 'data(displayName)',
+				'text-valign': 'bottom',
+				'text-halign': 'center',
+				'text-margin-y': 7,
+				'font-size': '12.5px',
+				'font-weight': 600,
+				'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+				'color': textColor,
+				'text-wrap': 'wrap',
+				'text-max-width': '132px',
+				'text-outline-color': backgroundColor,
+				'text-outline-width': 3,
+				'text-outline-opacity': 0.94,
+				'width': 'mapData(importance, 0, 20, 22, 58)',
+				'height': 'mapData(importance, 0, 20, 22, 58)',
+				'border-width': 2.5,
+				'border-color': textColor,
+				'border-opacity': 0.34,
+				'background-opacity': 0.96,
+				'background-color': 'data(color)',
+			},
 		},
-	},
-	// Base edge style (unified for free-form relationships)
-	{
-		selector: 'edge',
-		style: {
-			'width': 1,
-			'line-color': '#cbd5e1',
-			'curve-style': 'bezier',
-			'opacity': 0.4,
-			'line-style': 'solid',
-			'target-arrow-shape': 'triangle',
-			'target-arrow-color': '#cbd5e1',
-			'arrow-scale': 0.5,
+		{
+			selector: 'edge',
+			style: {
+				'width': 'mapData(weight, 1, 10, 1.2, 5.5)',
+				'line-color': edgeColor,
+				'curve-style': 'straight',
+				'opacity': 0.38,
+				'line-style': 'solid',
+				'target-arrow-shape': 'none',
+				'source-arrow-shape': 'none',
+				'line-cap': 'round',
+			},
 		},
-	},
-	// Highlighted state (selected node and neighbors)
-	{
-		selector: '.highlighted',
-		style: {
-			'opacity': 1,
+		{
+			selector: 'node[importance >= 8]',
+			style: {
+				'underlay-color': 'data(color)',
+				'underlay-opacity': 0.14,
+				'underlay-padding': 7,
+			},
 		},
-	},
-	{
-		selector: 'node.highlighted',
-		style: {
-			'border-width': 2,
-			'border-color': '#ffffff',
-			'width': 16,
-			'height': 16,
+		{
+			selector: '.highlighted',
+			style: {
+				'opacity': 1,
+			},
 		},
-	},
-	{
-		selector: 'edge.highlighted',
-		style: {
-			'width': 2,
-			'opacity': 1,
+		{
+			selector: 'node.highlighted',
+			style: {
+				'border-width': 4,
+				'border-color': textColor,
+				'border-opacity': 0.95,
+			},
 		},
-	},
-	// Faded state (non-selected elements)
-	{
-		selector: '.faded',
-		style: {
-			'opacity': 0.15,
+		{
+			selector: 'edge.highlighted',
+			style: {
+				'width': 'mapData(weight, 1, 10, 2.5, 7)',
+				'opacity': 0.95,
+			},
 		},
-	},
-	// Hover state
-	{
-		selector: 'node.hover',
-		style: {
-			'width': 16,
-			'height': 16,
-			'z-index': 999,
+		{
+			selector: '.faded',
+			style: {
+				'opacity': 0.08,
+			},
 		},
-	},
-];
+		{
+			selector: 'node.hover',
+			style: {
+				'border-width': 4,
+				'border-opacity': 1,
+				'z-index': 999,
+			},
+		},
+	];
+}
 
 // ============================================
 // Graph View
@@ -107,6 +133,7 @@ export class GraphView extends ItemView {
 	private insightsEl: HTMLElement | null = null;
 	private insightsVisible = false;
 	private analytics: GraphAnalytics | null = null;
+	private restoreHiddenButton: HTMLButtonElement | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: SimpleGraphBuilderPlugin) {
 		super(leaf);
@@ -148,6 +175,96 @@ export class GraphView extends ItemView {
 
 	private createGraphControls(container: HTMLElement): void {
 		const controls = container.createDiv({ cls: 'sgb-graph-controls' });
+
+		const sourceControl = controls.createEl('label');
+		sourceControl.createSpan({ text: 'Source notes' });
+		const sourceSelect = sourceControl.createEl('select');
+		sourceSelect.createEl('option', { value: '', text: 'All analyzed notes' });
+		const graph = this.plugin.graphCache.getGraphData();
+		const sourceFolders = getGraphSourceFolders(graph);
+		for (const folder of sourceFolders) {
+			sourceSelect.createEl('option', { value: folder, text: folder });
+		}
+		const savedSourceFolder = this.plugin.settings.graphSourceFolder;
+		if (savedSourceFolder && !sourceFolders.includes(savedSourceFolder)) {
+			sourceSelect.createEl('option', { value: savedSourceFolder, text: savedSourceFolder });
+		}
+		sourceSelect.value = savedSourceFolder;
+		sourceSelect.title = 'Filter the cached graph by the folder containing its source notes. This does not rerun analysis.';
+		sourceSelect.addEventListener('change', () => {
+			this.plugin.settings.graphSourceFolder = sourceSelect.value;
+			void this.plugin.saveSettings();
+			void this.renderGraph();
+		});
+
+		const rankControl = controls.createEl('label');
+		rankControl.createSpan({ text: 'Rank' });
+		const rankSelect = rankControl.createEl('select');
+		rankSelect.createEl('option', { value: 'recurrence', text: 'Across notes' });
+		rankSelect.createEl('option', { value: 'degree', text: 'By edges' });
+		rankSelect.value = this.plugin.settings.graphRankMode;
+		rankSelect.title = 'Across notes prioritizes themes repeated in distinct journal entries.';
+		rankSelect.addEventListener('change', () => {
+			this.plugin.settings.graphRankMode = rankSelect.value === 'degree'
+				? 'degree'
+				: 'recurrence';
+			void this.plugin.saveSettings();
+			void this.renderGraph();
+		});
+
+		const notesControl = controls.createEl('label');
+		notesControl.createSpan({ text: 'Min. notes' });
+		const notesInput = notesControl.createEl('input');
+		notesInput.type = 'number';
+		notesInput.min = '1';
+		notesInput.max = '100';
+		notesInput.value = String(this.plugin.settings.graphMinSourceNotes);
+		notesInput.title = 'Require an entity to occur in this many distinct notes.';
+		notesInput.addEventListener('change', () => {
+			const value = Number.parseInt(notesInput.value, 10);
+			this.plugin.settings.graphMinSourceNotes = Number.isFinite(value)
+				? Math.max(1, value)
+				: 1;
+			notesInput.value = String(this.plugin.settings.graphMinSourceNotes);
+			void this.plugin.saveSettings();
+			void this.renderGraph();
+		});
+
+		const metadataControl = controls.createEl('label', { cls: 'sgb-checkbox-control' });
+		const metadataCheckbox = metadataControl.createEl('input');
+		metadataCheckbox.type = 'checkbox';
+		metadataCheckbox.checked = this.plugin.settings.graphHideJournalMetadata;
+		metadataControl.createSpan({ text: 'Hide journal metadata' });
+		metadataCheckbox.title = 'Hide dates, times, weather, narrator pronouns, and generic journal scaffolding.';
+		metadataCheckbox.addEventListener('change', () => {
+			this.plugin.settings.graphHideJournalMetadata = metadataCheckbox.checked;
+			void this.plugin.saveSettings();
+			void this.renderGraph();
+		});
+
+		const connectedControl = controls.createEl('label', { cls: 'sgb-checkbox-control' });
+		const connectedCheckbox = connectedControl.createEl('input');
+		connectedCheckbox.type = 'checkbox';
+		connectedCheckbox.checked = this.plugin.settings.graphConnectedOnly;
+		connectedControl.createSpan({ text: 'Connected only' });
+		connectedCheckbox.title = 'Hide isolated entities left behind by the current hub filters.';
+		connectedCheckbox.addEventListener('change', () => {
+			this.plugin.settings.graphConnectedOnly = connectedCheckbox.checked;
+			void this.plugin.saveSettings();
+			void this.renderGraph();
+		});
+
+		const mainClusterControl = controls.createEl('label', { cls: 'sgb-checkbox-control' });
+		const mainClusterCheckbox = mainClusterControl.createEl('input');
+		mainClusterCheckbox.type = 'checkbox';
+		mainClusterCheckbox.checked = this.plugin.settings.graphMainClusterOnly;
+		mainClusterControl.createSpan({ text: 'Main cluster' });
+		mainClusterCheckbox.title = 'Center the largest connected meaning cluster and temporarily hide smaller components.';
+		mainClusterCheckbox.addEventListener('change', () => {
+			this.plugin.settings.graphMainClusterOnly = mainClusterCheckbox.checked;
+			void this.plugin.saveSettings();
+			void this.renderGraph();
+		});
 
 		const topControl = controls.createEl('label');
 		topControl.createSpan({ text: 'Show hubs' });
@@ -195,6 +312,16 @@ export class GraphView extends ItemView {
 			this.insightsEl?.toggleClass('is-visible', this.insightsVisible);
 			insightsButton.toggleClass('is-active', this.insightsVisible);
 		});
+
+		this.restoreHiddenButton = controls.createEl('button');
+		this.updateRestoreHiddenButton();
+		this.restoreHiddenButton.addEventListener('click', () => {
+			if (this.plugin.settings.graphHiddenNodeIds.length === 0) return;
+			this.plugin.settings.graphHiddenNodeIds = [];
+			void this.plugin.saveSettings();
+			this.updateRestoreHiddenButton();
+			void this.renderGraph();
+		});
 	}
 
 	/**
@@ -217,22 +344,39 @@ export class GraphView extends ItemView {
 
 		this.graphContainer.empty();
 
-		const graph = this.plugin.graphCache.getGraphData();
+		const fullGraph = this.plugin.graphCache.getGraphData();
+		const sourceFolder = this.plugin.settings.graphSourceFolder;
+		const sourceScopedGraph = filterGraphBySourceFolder(fullGraph, sourceFolder);
+		let graph = sourceScopedGraph;
+		const hiddenNodeIds = new Set(this.plugin.settings.graphHiddenNodeIds);
+		const minimumSourceNotes = this.plugin.settings.graphMinSourceNotes;
+		graph = filterGraphByNodePredicate(graph, node => {
+			if (hiddenNodeIds.has(node.id)) return false;
+			if (node.properties.excludeFromMeaningView === true) return false;
+			if (this.plugin.settings.graphHideJournalMetadata && isLikelyJournalMetadataNode(node)) {
+				return false;
+			}
+			return this.getSourceNoteCount(node.sourceNotes) >= minimumSourceNotes;
+		});
 
 		// Show empty state if no data
 		if (graph.nodes.length === 0) {
 			this.graphContainer.createEl('div', {
 				cls: 'graph-empty-state',
-				text: 'No graph data yet. Analyze some notes to build your knowledge graph.',
+				text: sourceScopedGraph.nodes.length > 0
+					? 'No entities match the current meaning filters. Lower Min. notes or restore hidden entities.'
+					: sourceFolder
+						? `No cached graph data was found under ${sourceFolder}.`
+						: 'No graph data yet. Analyze some notes to build your knowledge graph.',
 			});
 			return;
 		}
 
 		const totalElements = graph.nodes.length + graph.edges.length;
-		const isLargeGraph = totalElements > LARGE_GRAPH_THRESHOLD;
+		const sourceGraphIsLarge = totalElements > LARGE_GRAPH_THRESHOLD;
 
 		// Show loading indicator for large graphs
-		if (isLargeGraph) {
+		if (sourceGraphIsLarge) {
 			const loadingEl = this.graphContainer.createEl('div', {
 				cls: 'graph-loading',
 				text: `Loading graph (${graph.nodes.length} nodes, ${graph.edges.length} edges)...`,
@@ -244,10 +388,14 @@ export class GraphView extends ItemView {
 		}
 
 		this.analytics = analyzeGraph(graph);
-		this.renderInsights(this.analytics);
+		this.renderInsights(this.analytics, sourceFolder);
 		const connectionCount = new Map(
 			[...this.analytics.metricsByNodeId].map(([nodeId, metric]) => [nodeId, metric.degree])
 		);
+		const rankValue = (nodeId: string, sourceNotes: string[]): number =>
+			this.plugin.settings.graphRankMode === 'recurrence'
+				? this.getSourceNoteCount(sourceNotes)
+				: (connectionCount.get(nodeId) || 0);
 
 		let nodesToRender = [...graph.nodes];
 
@@ -263,7 +411,8 @@ export class GraphView extends ItemView {
 		const topNodeLimit = this.plugin.settings.graphTopNodeLimit;
 		if (topNodeLimit > 0 && nodesToRender.length > topNodeLimit) {
 			nodesToRender.sort((a, b) =>
-				(connectionCount.get(b.id) || 0) - (connectionCount.get(a.id) || 0)
+				rankValue(b.id, b.sourceNotes) - rankValue(a.id, a.sourceNotes)
+				|| (connectionCount.get(b.id) || 0) - (connectionCount.get(a.id) || 0)
 				|| a.properties.name.localeCompare(b.properties.name)
 			);
 			nodesToRender = nodesToRender.slice(0, topNodeLimit);
@@ -272,21 +421,33 @@ export class GraphView extends ItemView {
 		// Retain a defensive rendering ceiling even if the user selects "All".
 		if (totalElements > MAX_RENDER_ELEMENTS && nodesToRender.length > MAX_RENDER_ELEMENTS / 2) {
 			nodesToRender.sort((a, b) =>
-				(connectionCount.get(b.id) || 0) - (connectionCount.get(a.id) || 0)
+				rankValue(b.id, b.sourceNotes) - rankValue(a.id, a.sourceNotes)
 			);
 			nodesToRender = nodesToRender.slice(0, MAX_RENDER_ELEMENTS / 2);
-			new Notice(`Large graph: showing ${nodesToRender.length} most connected nodes`);
+			new Notice(`Large graph: showing ${nodesToRender.length} highest-ranked nodes`);
 		}
 
 		const filteredNodeIds = new Set(nodesToRender.map(node => node.id));
-		const edgesToRender = graph.edges.filter(
+		const matchingEdges = graph.edges.filter(
 			edge => filteredNodeIds.has(edge.source) && filteredNodeIds.has(edge.target)
 		);
+		const edgesToRender = aggregateGraphEdges(matchingEdges);
+
+		if (this.plugin.settings.graphConnectedOnly) {
+			nodesToRender = retainConnectedNodes(nodesToRender, edgesToRender);
+		}
+		if (this.plugin.settings.graphMainClusterOnly) {
+			nodesToRender = retainLargestConnectedComponent(nodesToRender, edgesToRender);
+		}
 
 		if (nodesToRender.length === 0) {
 			this.graphContainer.createEl('div', {
 				cls: 'graph-empty-state',
-				text: 'No nodes match the current hub filters.',
+				text: this.plugin.settings.graphMainClusterOnly
+					? 'No main meaning cluster matches the current filters. Turn off Main cluster or lower the thresholds.'
+					: this.plugin.settings.graphConnectedOnly
+					? 'No connected entities match the current filters. Turn off Connected only or lower the thresholds.'
+					: 'No nodes match the current hub filters.',
 			});
 			return;
 		}
@@ -301,19 +462,25 @@ export class GraphView extends ItemView {
 				data: {
 					id: node.id,
 					name: node.properties.name,
+					displayName: toTitleCaseLabel(node.properties.name),
 					entityType: node.entityType,
 					label: node.label || node.entityType, // fallback for legacy
 					color: this.plugin.settings.graphColorMode === 'community'
 						? getCommunityColor(community)
 						: getEntityTypeColor(node.entityType || node.label),
 					sourceNotes: node.sourceNotes,
+					description: typeof node.properties.description === 'string'
+						? node.properties.description
+						: '',
 					degree: metric?.degree ?? 0,
+					noteCount: this.getSourceNoteCount(node.sourceNotes),
+					importance: rankValue(node.id, node.sourceNotes),
 					community,
 				},
 			});
 		}
 
-		// Add edges with unified styling (free-form relationships)
+		// Add one weighted visual edge per entity pair. Raw relationships stay in cache.
 		const nodeIds = new Set(nodesToRender.map(n => n.id));
 		for (const edge of edgesToRender) {
 			if (nodeIds.has(edge.source) && nodeIds.has(edge.target)) {
@@ -322,27 +489,42 @@ export class GraphView extends ItemView {
 						id: edge.id,
 						source: edge.source,
 						target: edge.target,
-						relationship: edge.relationship || edge.type || 'relates to',
-						detail: edge.properties?.detail,
+						relationship: edge.relationship,
+						detail: edge.detail,
+						weight: edge.weight,
+						sourceNoteCount: edge.sourceNoteCount,
 					},
 				});
 			}
 		}
 
 		// Choose layout based on graph size
-		const layoutConfig = this.getLayoutConfig(elements.length, isLargeGraph);
+		const renderIsLarge = elements.length > LARGE_GRAPH_THRESHOLD;
+		const layoutConfig = this.getLayoutConfig(elements.length, renderIsLarge);
 
 		this.cy = cytoscape({
 			container: this.graphContainer,
 			elements: elements,
-			style: GRAPH_STYLES,
+			style: getGraphStyles(this.graphContainer),
 			layout: layoutConfig,
 			minZoom: 0.1,
 			maxZoom: 3,
 			// Performance optimizations
-			textureOnViewport: isLargeGraph,
-			hideEdgesOnViewport: isLargeGraph,
-			hideLabelsOnViewport: isLargeGraph,
+			textureOnViewport: renderIsLarge,
+			hideEdgesOnViewport: renderIsLarge,
+			hideLabelsOnViewport: renderIsLarge,
+		});
+		this.cy.ready(() => {
+			activeWindow.requestAnimationFrame(() => {
+				if (!this.cy || this.cy.destroyed()) return;
+				const shorterSide = Math.min(
+					this.graphContainer?.clientWidth || 0,
+					this.graphContainer?.clientHeight || 0
+				);
+				const padding = Math.max(56, Math.round(shorterSide * 0.08));
+				this.cy.fit(this.cy.elements(), padding);
+				this.cy.center(this.cy.elements());
+			});
 		});
 
 		// Click handler: highlight connected nodes
@@ -356,6 +538,48 @@ export class GraphView extends ItemView {
 			const name = evt.target.data('name');
 			if (name) {
 				openSearchModal(this.plugin, name);
+			}
+		});
+
+		// Right-click/long-press: correct or hide a misleading cached entity.
+		this.cy.on('cxttap', 'node', (evt: cytoscape.EventObject) => {
+			const nodeId = String(evt.target.data('id') || '');
+			const node = this.plugin.graphCache.getNodeById(nodeId);
+			if (!node) return;
+
+			const menu = new Menu();
+			menu.addItem(item => item
+				.setTitle('Correct entity details')
+				.setIcon('pencil')
+				.onClick(() => {
+					new EntityEditModal(this.plugin, node, () => {
+						void this.renderGraph();
+					}).open();
+				}));
+			menu.addItem(item => item
+				.setTitle('Search source notes')
+				.setIcon('search')
+				.onClick(() => openSearchModal(this.plugin, node.properties.name)));
+			menu.addItem(item => item
+				.setTitle('Hide from meaning view')
+				.setIcon('eye-off')
+				.onClick(() => {
+					const hiddenIds = new Set(this.plugin.settings.graphHiddenNodeIds);
+					hiddenIds.add(node.id);
+					this.plugin.settings.graphHiddenNodeIds = [...hiddenIds];
+					void this.plugin.saveSettings();
+					this.updateRestoreHiddenButton();
+					void this.renderGraph();
+				}));
+
+			const originalEvent = evt.originalEvent;
+			if (originalEvent instanceof MouseEvent) {
+				menu.showAtMouseEvent(originalEvent);
+			} else {
+				menu.showAtPosition({
+					x: evt.renderedPosition.x,
+					y: evt.renderedPosition.y,
+				});
 			}
 		});
 
@@ -390,7 +614,21 @@ export class GraphView extends ItemView {
 		});
 	}
 
-	private renderInsights(analytics: GraphAnalytics): void {
+	private getSourceNoteCount(sourceNotes: string[]): number {
+		return new Set(sourceNotes).size;
+	}
+
+	private updateRestoreHiddenButton(): void {
+		if (!this.restoreHiddenButton) return;
+		const count = this.plugin.settings.graphHiddenNodeIds.length;
+		this.restoreHiddenButton.setText(`Restore hidden (${count})`);
+		this.restoreHiddenButton.disabled = count === 0;
+		this.restoreHiddenButton.title = count === 0
+			? 'No manually hidden entities'
+			: 'Restore every entity manually hidden from the meaning view';
+	}
+
+	private renderInsights(analytics: GraphAnalytics, sourceFolder: string): void {
 		if (!this.insightsEl) return;
 		this.insightsEl.empty();
 
@@ -398,15 +636,27 @@ export class GraphView extends ItemView {
 		const header = this.insightsEl.createDiv({ cls: 'sgb-insights-header' });
 		header.createEl('strong', { text: 'Graph insights' });
 		header.createSpan({
-			text: `${analytics.rankedNodes.length} entities · ${connectedCommunities.length} connected communities`,
+			text: `${analytics.rankedNodes.length} entities · ${connectedCommunities.length} connected communities`
+				+ (sourceFolder ? ` · ${sourceFolder}` : ''),
 		});
 
 		const columns = this.insightsEl.createDiv({ cls: 'sgb-insights-columns' });
+		const rankedHubs = [...analytics.rankedNodes]
+			.filter(metric => metric.degree > 0)
+			.sort((a, b) => {
+				if (this.plugin.settings.graphRankMode === 'recurrence') {
+					const noteDifference = this.getSourceNoteCount(b.node.sourceNotes)
+						- this.getSourceNoteCount(a.node.sourceNotes);
+					if (noteDifference !== 0) return noteDifference;
+				}
+				return b.degree - a.degree;
+			})
+			.slice(0, 10);
 		this.renderMetricList(
 			columns,
-			'Top hubs',
-			analytics.rankedNodes.filter(metric => metric.degree > 0).slice(0, 10),
-			metric => `${metric.degree} edges · ${metric.node.sourceNotes.length} notes`
+			this.plugin.settings.graphRankMode === 'recurrence' ? 'Recurring themes' : 'Top hubs',
+			rankedHubs,
+			metric => `${this.getSourceNoteCount(metric.node.sourceNotes)} notes · ${metric.degree} edges`
 		);
 
 		const bridges = [...analytics.rankedNodes]
@@ -430,7 +680,9 @@ export class GraphView extends ItemView {
 			item.createSpan({ text: `${community.nodeIds.length} entities · ${community.edgeCount} internal edges` });
 			item.createDiv({
 				cls: 'sgb-community-names',
-				text: community.topNodes.map(metric => metric.node.properties.name).join(', '),
+				text: community.topNodes
+					.map(metric => toTitleCaseLabel(metric.node.properties.name))
+					.join(', '),
 			});
 		}
 
@@ -450,7 +702,9 @@ export class GraphView extends ItemView {
 		column.createEl('h4', { text: title });
 		for (const metric of metrics) {
 			const item = column.createDiv({ cls: 'sgb-insight-metric' });
-			const button = item.createEl('button', { text: metric.node.properties.name });
+			const button = item.createEl('button', {
+				text: toTitleCaseLabel(metric.node.properties.name),
+			});
 			button.addEventListener('click', () => this.focusNode(metric.node.id));
 			item.createSpan({ text: detail(metric) });
 		}
@@ -470,15 +724,19 @@ export class GraphView extends ItemView {
 	private showNodeTooltip(node: cytoscape.NodeSingular, position: { x: number; y: number }): void {
 		if (!this.tooltipEl) return;
 
-		const name = node.data('name');
+		const name = node.data('displayName') || toTitleCaseLabel(node.data('name'));
 		const entityType = node.data('entityType') || node.data('label');
 		const sourceNotes = node.data('sourceNotes') || [];
+		const description = node.data('description') || '';
 		const degree = node.data('degree') || 0;
 		const community = node.data('community') || 0;
 
 		this.tooltipEl.empty();
-		this.tooltipEl.createDiv({ cls: 'tooltip-label', text: entityType });
+		this.tooltipEl.createDiv({ cls: 'tooltip-label', text: toTitleCaseLabel(entityType) });
 		this.tooltipEl.createDiv({ cls: 'tooltip-name', text: name });
+		if (description) {
+			this.tooltipEl.createDiv({ cls: 'tooltip-detail', text: description });
+		}
 		this.tooltipEl.createDiv({ cls: 'tooltip-sources', text: `${degree} edges · community ${community}` });
 		if (sourceNotes.length > 0) {
 			this.tooltipEl.createDiv({ cls: 'tooltip-sources', text: `Found in ${sourceNotes.length} note${sourceNotes.length > 1 ? 's' : ''}` });
@@ -525,9 +783,11 @@ export class GraphView extends ItemView {
 			name: 'fcose',
 			animate: false,
 			randomize: true,
-			edgeElasticity: () => 0.45,
+			fit: true,
+			padding: 48,
+			edgeElasticity: () => 0.5,
 			nestingFactor: 0.1,
-			numIter: 2500,
+			numIter: 2200,
 			tile: true,
 		};
 
@@ -537,11 +797,12 @@ export class GraphView extends ItemView {
 				...baseConfig,
 				quality: 'default',
 				nodeDimensionsIncludeLabels: false,
-				nodeRepulsion: () => 20000,
-				idealEdgeLength: () => 120,
-				gravity: 0.1,
-				tilingPaddingVertical: 30,
-				tilingPaddingHorizontal: 30,
+				nodeRepulsion: () => 16000,
+				idealEdgeLength: () => 105,
+				gravity: 0.25,
+				componentSpacing: 90,
+				tilingPaddingVertical: 24,
+				tilingPaddingHorizontal: 24,
 			} as cytoscape.LayoutOptions;
 		}
 
@@ -551,24 +812,26 @@ export class GraphView extends ItemView {
 				...baseConfig,
 				quality: 'default',
 				nodeDimensionsIncludeLabels: true,
-				nodeRepulsion: () => 25000,
-				idealEdgeLength: () => 150,
-				gravity: 0.15,
-				tilingPaddingVertical: 40,
-				tilingPaddingHorizontal: 40,
+				nodeRepulsion: () => 13000,
+				idealEdgeLength: () => 115,
+				gravity: 0.3,
+				componentSpacing: 80,
+				tilingPaddingVertical: 22,
+				tilingPaddingHorizontal: 22,
 			} as cytoscape.LayoutOptions;
 		}
 
 		// Small graph (<300 elements)
 		return {
 			...baseConfig,
-			quality: 'proof',
+			quality: 'default',
 			nodeDimensionsIncludeLabels: true,
-			nodeRepulsion: () => 30000,
-			idealEdgeLength: () => 200,
-			gravity: 0.1,
-			tilingPaddingVertical: 50,
-			tilingPaddingHorizontal: 50,
+			nodeRepulsion: () => 9000,
+			idealEdgeLength: () => 105,
+			gravity: 0.38,
+			componentSpacing: 70,
+			tilingPaddingVertical: 18,
+			tilingPaddingHorizontal: 18,
 		} as cytoscape.LayoutOptions;
 	}
 

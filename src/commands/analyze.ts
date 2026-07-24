@@ -4,6 +4,7 @@ import { loadHashes, saveHashes, computeHash, hasNoteChanged, updateNoteHash, re
 import { mergeExtractionIntoCache, mergeExtractionIntoCacheWithResolution, mergeInternalLinksIntoCache, removeNoteFromCache } from '../graph/merge';
 import { extractOntologyChunked, settingsToExtractionOptions, ExtractionError } from '../extraction/llm-client';
 import { stripManagedRelatedNotes } from '../graph/backlinks';
+import { applyEntityPseudonyms, filterJournalMetadataExtraction } from '../graph/quality';
 
 // Vault analysis state (encapsulated to avoid module-level mutable variables)
 const vaultAnalysisState = {
@@ -58,7 +59,19 @@ export async function analyzeCurrentNote(plugin: SimpleGraphBuilderPlugin): Prom
 		// Use chunked extraction for better handling of long notes
 		const options = settingsToExtractionOptions(plugin.settings);
 		const mode = plugin.settings.extractionMode || 'standard';
-		const { result, chunkCount } = await extractOntologyChunked(options, semanticContent, existingNodeNames, mode);
+		const { result: rawResult, chunkCount } = await extractOntologyChunked(
+			options,
+			semanticContent,
+			existingNodeNames,
+			mode
+		);
+		const cleanedResult = plugin.settings.journalMetadataCleanup
+			? filterJournalMetadataExtraction(rawResult)
+			: rawResult;
+		const result = applyEntityPseudonyms(
+			cleanedResult,
+			plugin.settings.entityPseudonyms
+		);
 
 		// Replace this note's previous contribution only after extraction succeeds.
 		// This prevents deleted or renamed concepts from lingering in the graph.
@@ -235,7 +248,14 @@ export async function analyzeFile(
 		// Use chunked extraction
 		const extractionOptions = settingsToExtractionOptions(plugin.settings);
 		const mode = plugin.settings.extractionMode || 'standard';
-		const { result } = await extractOntologyChunked(extractionOptions, semanticContent, existingNodeNames, mode);
+		const { result: rawResult } = await extractOntologyChunked(extractionOptions, semanticContent, existingNodeNames, mode);
+		const cleanedResult = plugin.settings.journalMetadataCleanup
+			? filterJournalMetadataExtraction(rawResult)
+			: rawResult;
+		const result = applyEntityPseudonyms(
+			cleanedResult,
+			plugin.settings.entityPseudonyms
+		);
 
 		// Replace stale entities/relationships only after a successful API response.
 		removeNoteFromCache(plugin.graphCache, file.path);
@@ -304,7 +324,8 @@ export function cancelVaultAnalysis(): void {
  */
 export async function analyzeEntireVault(
 	plugin: SimpleGraphBuilderPlugin,
-	onProgress?: (current: number, total: number, currentFile: string) => void
+	onProgress?: (current: number, total: number, currentFile: string) => void,
+	options?: { forceReanalyze?: boolean }
 ): Promise<{ analyzed: number; skipped: number; errors: number; nodesAdded: number; nodesMerged: number; relationshipsAdded: number }> {
 	if (vaultAnalysisState.isRunning) {
 		new Notice('Vault analysis is already running');
@@ -328,6 +349,7 @@ export async function analyzeEntireVault(
 	// Get all markdown files
 	const files = getFilesInAnalysisScope(plugin);
 	const total = files.length;
+	const forceReanalyze = options?.forceReanalyze ?? false;
 	let analyzed = 0;
 	let skipped = 0;
 	let errors = 0;
@@ -338,7 +360,8 @@ export async function analyzeEntireVault(
 	// Load hashes once
 	const hashes = await loadHashes(plugin);
 
-	const progressNotice = new Notice(`Analyzing vault: 0/${total}...`, 0);
+	const actionLabel = forceReanalyze ? 'Rebuilding analysis' : 'Analyzing vault';
+	const progressNotice = new Notice(`${actionLabel}: 0/${total}...`, 0);
 
 	try {
 		for (let i = 0; i < files.length; i++) {
@@ -351,10 +374,12 @@ export async function analyzeEntireVault(
 			const file = files[i];
 
 			// Update progress
-			progressNotice.setMessage(`Analyzing vault: ${i + 1}/${total}\n${file.basename}`);
+			progressNotice.setMessage(`${actionLabel}: ${i + 1}/${total}\n${file.basename}`);
 			onProgress?.(i + 1, total, file.basename);
 
-			const result = await analyzeFile(plugin, file, hashes);
+			const result = await analyzeFile(plugin, file, hashes, {
+				skipUnchanged: !forceReanalyze,
+			});
 
 			if (result.success) {
 				analyzed++;

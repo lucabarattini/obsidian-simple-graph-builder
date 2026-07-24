@@ -74,7 +74,7 @@ ${existingNodeNames.slice(0, 100).join(', ')}${existingNodeNames.length > 100 ? 
 - CONCEPT: Ideas, theories, principles, abstract notions
 - PROJECT: Projects, products, initiatives, goals
 - TOOL: Software, hardware, instruments, utilities
-- EVENT: Meetings, conferences, milestones, dates
+- EVENT: Meaningful meetings, transitions, milestones, and life events (not routine entry dates)
 - PLACE: Locations, venues, geography
 - DOCUMENT: Papers, books, articles, notes, creative works
 - METHOD: Techniques, approaches, processes, workflows
@@ -89,6 +89,9 @@ ${existingNodeNames.slice(0, 100).join(', ')}${existingNodeNames.length > 100 ? 
 6. Skip trivial terms ("thing", "item", "data", "information")
 7. For journals, prioritize explicitly stated recurring themes, emotions, values, goals, decisions, relationship dynamics, stressors, and coping methods
 8. Stay grounded in the text. Do not infer medical diagnoses or sensitive traits that the writer did not explicitly state
+9. For journals, IGNORE scaffolding and metadata: entry dates/times, weather, coordinates, template labels, the narrator pronouns ("I", "me"), and generic containers such as "Journal entry" or "Journaling"
+10. Do not turn every mentioned place into a meaningful entity. Extract a place only when the prose discusses what happened there or what the place meant; ignore location/frontmatter metadata
+11. Prefer durable concepts that can recur across notes. A specific date belongs in relationship detail when necessary, not as an entity
 
 ${existingSection}
 

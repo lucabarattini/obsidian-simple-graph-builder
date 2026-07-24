@@ -239,8 +239,8 @@ export class SettingsTab extends PluginSettingTab {
 					});
 			});
 
-		new Setting(containerEl)
-			.setName('Analysis folder')
+			new Setting(containerEl)
+				.setName('Analysis folder')
 			.setDesc('Optional vault-relative folder to analyze, for example "Notes". Leave blank for the entire vault.')
 			.addText(text => {
 				text
@@ -249,10 +249,22 @@ export class SettingsTab extends PluginSettingTab {
 					.onChange(async value => {
 						this.plugin.settings.analysisFolder = value.trim().replace(/^\/+|\/+$/g, '');
 						await this.plugin.saveSettings();
-					});
-			});
+						});
+				});
 
-		// Auto-analysis toggle
+			new Setting(containerEl)
+				.setName('Journal meaning cleanup')
+				.setDesc('After extraction, remove entry dates/times, weather, narrator pronouns, and generic journal scaffolding from the graph.')
+				.addToggle(toggle => {
+					toggle
+						.setValue(this.plugin.settings.journalMetadataCleanup)
+						.onChange(async value => {
+							this.plugin.settings.journalMetadataCleanup = value;
+							await this.plugin.saveSettings();
+						});
+				});
+
+			// Auto-analysis toggle
 		new Setting(containerEl)
 			.setName('Auto-analyze on save')
 			.setDesc('Automatically analyze notes when you save them. Requires API key to be configured.')
@@ -442,6 +454,30 @@ export class SettingsTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
+			.setName('Connected meaning map')
+			.setDesc('Hide isolated entities left behind by graph filters. This keeps the view focused on visible relationships.')
+			.addToggle(toggle => {
+				toggle
+					.setValue(this.plugin.settings.graphConnectedOnly)
+					.onChange(async value => {
+						this.plugin.settings.graphConnectedOnly = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName('Center main cluster')
+			.setDesc('Show only the largest connected component by default. Smaller clusters remain cached and can be restored from the graph toolbar.')
+			.addToggle(toggle => {
+				toggle
+					.setValue(this.plugin.settings.graphMainClusterOnly)
+					.onChange(async value => {
+						this.plugin.settings.graphMainClusterOnly = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
 			.setName('Minimum connections')
 			.setDesc(`Hide nodes with fewer than this many connections (current: ${this.plugin.settings.graphMinDegree})`)
 			.addSlider(slider => {
@@ -455,9 +491,9 @@ export class SettingsTab extends PluginSettingTab {
 					});
 				});
 
-		new Setting(containerEl)
-			.setName('Show strongest hubs')
-			.setDesc('Limit the graph to the most connected entities. Use All together with minimum connections for a threshold-only view.')
+			new Setting(containerEl)
+				.setName('Show strongest hubs')
+				.setDesc('Limit the graph to the highest-ranked entities. The graph toolbar chooses recurrence across notes or edge degree.')
 			.addDropdown(dropdown => {
 				dropdown
 					.addOption('0', 'All nodes')
@@ -711,8 +747,8 @@ export class SettingsTab extends PluginSettingTab {
 
 		const vaultButtonContainer = containerEl.createDiv({ cls: 'vault-analysis-buttons' });
 
-		new Setting(vaultButtonContainer)
-			.setName('Analyze entire vault')
+			new Setting(vaultButtonContainer)
+				.setName('Analyze entire vault')
 			.setDesc(`${getFilesInAnalysisScope(this.plugin).length} markdown files in the configured analysis scope`)
 			.addButton(button => {
 				const updateButtonState = () => {
@@ -745,10 +781,40 @@ export class SettingsTab extends PluginSettingTab {
 							this.renderGraphStats(statsEl);
 						}).open();
 					}
+					});
 				});
-			});
 
-		// Data Management section
+			new Setting(vaultButtonContainer)
+				.setName('Rebuild configured analysis folder')
+				.setDesc('Force fresh extraction for the configured folder while preserving graph data from every other folder.')
+				.addButton(button => {
+					button
+						.setButtonText('Rebuild folder')
+						.setWarning()
+						.onClick(() => {
+							if (isAnalyzingVault()) {
+								new Notice('Another analysis is already running.');
+								return;
+							}
+
+							const folder = this.plugin.settings.analysisFolder.trim();
+							if (!folder) {
+								new Notice('Set an Analysis folder before using targeted rebuild.');
+								return;
+							}
+							const fileCount = getFilesInAnalysisScope(this.plugin).length;
+							const message = `Re-extract ${fileCount} notes under ${folder}?\n\n`
+								+ 'This makes fresh API calls and replaces each note contribution only after that note succeeds. '
+								+ 'Graph data from other folders is preserved.';
+
+							void new ConfirmModal(this.app, message, async () => {
+								await analyzeEntireVault(this.plugin, undefined, { forceReanalyze: true });
+								this.renderGraphStats(statsEl);
+							}).open();
+						});
+				});
+
+			// Data Management section
 		new Setting(containerEl).setName('Data management').setHeading();
 
 		// Graph stats

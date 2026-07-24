@@ -311,6 +311,7 @@ export interface Settings {
 	// Extraction settings
 	extractionMode: ExtractionMode;  // Controls extraction thoroughness
 	analysisFolder: string;          // Optional vault-relative folder scope
+	journalMetadataCleanup: boolean; // Remove dates/weather/template scaffolding after extraction
 	// Auto-analysis
 	autoAnalyzeOnSave: boolean;  // Analyze notes automatically when saved
 	// Smart Search model settings (separate from extraction)
@@ -325,10 +326,19 @@ export interface Settings {
 	graphMinDegree: number;      // Minimum connections to show node in graph (default: 0)
 	graphTopNodeLimit: number;   // Show only the N most connected nodes (0 = all)
 	graphColorMode: 'entityType' | 'community';
+	graphSourceFolder: string;   // Optional cached source-note folder scope for graph views
+	graphRankMode: 'recurrence' | 'degree';
+	graphMinSourceNotes: number;
+	graphHideJournalMetadata: boolean;
+	graphConnectedOnly: boolean;
+	graphMainClusterOnly: boolean;
+	graphHiddenNodeIds: string[];
+	entityPseudonyms: Record<string, string>; // Private name -> graph pseudonym; Markdown stays unchanged
 	// Generated Obsidian backlinks
 	backlinkMinSharedEntities: number;
 	backlinkMaxLinksPerNote: number;
 	backlinkMaxEntityDocumentFrequency: number;
+	backlinkSourceFolder: string; // Optional cached source-note folder scope for suggestions
 	// Embedding-based entity resolution (opt-in)
 	enableEmbeddings: boolean;            // default: false - embeddings are opt-in to avoid API costs
 	embeddingProvider: EmbeddingProvider; // default: 'openai'

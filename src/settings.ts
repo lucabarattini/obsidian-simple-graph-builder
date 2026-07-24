@@ -116,6 +116,7 @@ export const DEFAULT_SETTINGS: Settings = {
 	ollamaHost: 'http://localhost:11434',
 	extractionMode: 'standard',
 	analysisFolder: '',
+	journalMetadataCleanup: true,
 	autoAnalyzeOnSave: false,
 	// Smart Search model settings
 	useSeparateSmartSearchModel: false,
@@ -129,10 +130,19 @@ export const DEFAULT_SETTINGS: Settings = {
 	graphMinDegree: 0,
 	graphTopNodeLimit: 0,
 	graphColorMode: 'entityType',
+	graphSourceFolder: '',
+	graphRankMode: 'recurrence',
+	graphMinSourceNotes: 2,
+	graphHideJournalMetadata: true,
+	graphConnectedOnly: true,
+	graphMainClusterOnly: true,
+	graphHiddenNodeIds: [],
+	entityPseudonyms: {},
 	// Generated Obsidian backlinks
 	backlinkMinSharedEntities: 2,
 	backlinkMaxLinksPerNote: 3,
 	backlinkMaxEntityDocumentFrequency: 0.25,
+	backlinkSourceFolder: '',
 	// Embedding-based resolution (opt-in)
 	enableEmbeddings: false,
 	embeddingProvider: 'openai',
