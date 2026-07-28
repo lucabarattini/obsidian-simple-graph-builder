@@ -1,6 +1,9 @@
-# Simple Graph Builder
+# Journal Meaning Graph
 
-This plugin builds a lightweight knowledge graph from users' Obsidian notes using LLM-powered entity extraction with a simple yet expressive ontology model to provide knowledge extraction, exploration, and RAG search. Since Obsidian provides wonderful links between notes, implementing ontology model would meet users' (especially researchers') needs.
+Journal Meaning Graph is a journal-focused fork of Simple Graph Builder. It builds
+a lightweight knowledge graph from Obsidian notes using LLM-powered entity
+extraction, with recurrence ranking, source-folder scopes, metadata cleanup, safe
+backlinks, and a focused meaning-map renderer.
 
 ![Graph View](https://raw.githubusercontent.com/junhewk/simple-graph-builder/master/docs/graph-view.png)
 
@@ -192,27 +195,27 @@ Folder scoping reuses the existing graph cache, so it does not require re-analys
 
 ## Installation
 
-### From Obsidian Community Plugins
-1. Open Settings → Community plugins
-2. Search for "Simple Graph Builder"
-3. Click Install, then Enable
+This journal-focused fork uses the plugin ID `journal-meaning-graph`. The distinct
+ID is intentional: it prevents Obsidian updates for the upstream
+`simple-graph-builder` plugin from overwriting the journal filters and custom
+graph renderer.
 
 ### Using BRAT (Recommended for Beta)
 1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) from Community Plugins
 2. Open command palette → "BRAT: Add a beta plugin"
-3. Enter: `junhewk/simple-graph-builder`
+3. Enter: `lucabarattini/obsidian-simple-graph-builder`
 4. Enable the plugin in Settings → Community plugins
 
 ### Manual Installation
 1. Download `main.js`, `styles.css`, and `manifest.json` from the latest release
-2. Create folder: `VaultFolder/.obsidian/plugins/simple-graph-builder/`
+2. Create folder: `VaultFolder/.obsidian/plugins/journal-meaning-graph/`
 3. Copy the downloaded files into the folder
-4. Reload Obsidian and enable the plugin
+4. Reload Obsidian and enable **Journal Meaning Graph**
 
 ## Usage
 
 ### Quick Start
-1. Configure your API key in Settings → Simple Graph Builder
+1. Configure your API key in Settings → Journal Meaning Graph
 2. Open a note and run command: `Analyze current note`
 3. View results with command: `Open graph view`
 
@@ -294,8 +297,8 @@ Simple Graph Builder combines the simplicity of LightRAG with KGGen's hybrid res
 
 ## Support
 
-- [GitHub Issues](https://github.com/junhewk/simple-graph-builder/issues)
-- [Documentation](https://github.com/junhewk/simple-graph-builder)
+- [GitHub Issues](https://github.com/lucabarattini/obsidian-simple-graph-builder/issues)
+- [Upstream project](https://github.com/junhewk/simple-graph-builder)
 
 ## License
 
