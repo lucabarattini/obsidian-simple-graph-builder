@@ -137,6 +137,9 @@ export const DEFAULT_SETTINGS: Settings = {
 	graphConnectedOnly: true,
 	graphMainClusterOnly: true,
 	graphHiddenNodeIds: [],
+	graphExcludedNames: [],
+	graphAutoSnapshot: true,
+	graphSnapshotPath: 'Journal Meaning Graph/graph-view.png',
 	entityPseudonyms: {},
 	// Generated Obsidian backlinks
 	backlinkMinSharedEntities: 2,

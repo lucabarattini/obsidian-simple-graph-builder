@@ -1,4 +1,4 @@
-import { ItemView, WorkspaceLeaf, Notice, Menu } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, Menu, normalizePath, TFile } from 'obsidian';
 import cytoscape from 'cytoscape';
 import fcose from 'cytoscape-fcose';
 import SimpleGraphBuilderPlugin from '../main';
@@ -134,6 +134,7 @@ export class GraphView extends ItemView {
 	private insightsVisible = false;
 	private analytics: GraphAnalytics | null = null;
 	private restoreHiddenButton: HTMLButtonElement | null = null;
+	private renderGeneration = 0;
 
 	constructor(leaf: WorkspaceLeaf, plugin: SimpleGraphBuilderPlugin) {
 		super(leaf);
@@ -335,6 +336,7 @@ export class GraphView extends ItemView {
 
 	async renderGraph(): Promise<void> {
 		if (!this.graphContainer) return;
+		const renderGeneration = ++this.renderGeneration;
 
 		// Destroy existing graph if any
 		if (this.cy) {
@@ -349,9 +351,15 @@ export class GraphView extends ItemView {
 		const sourceScopedGraph = filterGraphBySourceFolder(fullGraph, sourceFolder);
 		let graph = sourceScopedGraph;
 		const hiddenNodeIds = new Set(this.plugin.settings.graphHiddenNodeIds);
+		const excludedNames = new Set(
+			(this.plugin.settings.graphExcludedNames || [])
+				.map(name => name.trim().toLocaleLowerCase())
+				.filter(Boolean)
+		);
 		const minimumSourceNotes = this.plugin.settings.graphMinSourceNotes;
 		graph = filterGraphByNodePredicate(graph, node => {
 			if (hiddenNodeIds.has(node.id)) return false;
+			if (excludedNames.has(node.properties.name.trim().toLocaleLowerCase())) return false;
 			if (node.properties.excludeFromMeaningView === true) return false;
 			if (this.plugin.settings.graphHideJournalMetadata && isLikelyJournalMetadataNode(node)) {
 				return false;
@@ -514,16 +522,18 @@ export class GraphView extends ItemView {
 			hideEdgesOnViewport: renderIsLarge,
 			hideLabelsOnViewport: renderIsLarge,
 		});
-		this.cy.ready(() => {
+		const renderedCy = this.cy;
+		renderedCy.ready(() => {
 			activeWindow.requestAnimationFrame(() => {
-				if (!this.cy || this.cy.destroyed()) return;
+				if (this.cy !== renderedCy || renderedCy.destroyed()) return;
 				const shorterSide = Math.min(
 					this.graphContainer?.clientWidth || 0,
 					this.graphContainer?.clientHeight || 0
 				);
 				const padding = Math.max(56, Math.round(shorterSide * 0.08));
-				this.cy.fit(this.cy.elements(), padding);
-				this.cy.center(this.cy.elements());
+				renderedCy.fit(renderedCy.elements(), padding);
+				renderedCy.center(renderedCy.elements());
+				void this.saveGraphSnapshot(renderedCy, renderGeneration);
 			});
 		});
 
@@ -612,6 +622,64 @@ export class GraphView extends ItemView {
 		this.cy.on('mouseout', 'edge', () => {
 			this.hideTooltip();
 		});
+	}
+
+	private async saveGraphSnapshot(
+		renderedCy: cytoscape.Core,
+		renderGeneration: number
+	): Promise<void> {
+		if (!this.plugin.settings.graphAutoSnapshot) return;
+		if (renderGeneration !== this.renderGeneration || renderedCy.destroyed()) return;
+
+		const configuredPath = this.plugin.settings.graphSnapshotPath.trim()
+			|| 'Journal Meaning Graph/graph-view.png';
+		const snapshotPath = normalizePath(
+			configuredPath.toLocaleLowerCase().endsWith('.png')
+				? configuredPath
+				: `${configuredPath}.png`
+		);
+
+		try {
+			const folderPath = snapshotPath.split('/').slice(0, -1).join('/');
+			if (folderPath) await this.ensureVaultFolder(folderPath);
+			if (renderGeneration !== this.renderGeneration || renderedCy.destroyed()) return;
+
+			const backgroundColor = this.graphContainer
+				? activeWindow.getComputedStyle(this.graphContainer)
+					.getPropertyValue('--background-primary').trim() || '#1e2228'
+				: '#1e2228';
+			const blob = await renderedCy.png({
+				output: 'blob-promise',
+				full: true,
+				maxWidth: 2400,
+				maxHeight: 1600,
+				bg: backgroundColor,
+			});
+			if (renderGeneration !== this.renderGeneration) return;
+
+			const binary = await blob.arrayBuffer();
+			const existing = this.plugin.app.vault.getAbstractFileByPath(snapshotPath);
+			if (existing instanceof TFile) {
+				await this.plugin.app.vault.modifyBinary(existing, binary);
+			} else if (!existing) {
+				await this.plugin.app.vault.createBinary(snapshotPath, binary);
+			} else {
+				console.warn(`Graph snapshot path is not a file: ${snapshotPath}`);
+			}
+		} catch (error) {
+			console.warn('Could not save graph PNG snapshot:', error);
+		}
+	}
+
+	private async ensureVaultFolder(folderPath: string): Promise<void> {
+		let currentPath = '';
+		for (const segment of normalizePath(folderPath).split('/')) {
+			if (!segment) continue;
+			currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+			if (!this.plugin.app.vault.getAbstractFileByPath(currentPath)) {
+				await this.plugin.app.vault.createFolder(currentPath);
+			}
+		}
 	}
 
 	private getSourceNoteCount(sourceNotes: string[]): number {

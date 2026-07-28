@@ -170,6 +170,8 @@ Enable embedding-based entity resolution for intelligent deduplication:
 - **Hide journal metadata**: Suppress dates, times, weather, and generic journal scaffolding from the current view
 - **Connected meaning map**: Remove isolated entities left behind by the current filters
 - **Center main cluster**: Focus and center the largest connected component while keeping smaller components cached
+- **Local display exclusions**: Keep selected entity names out of the meaning view without editing notes or deleting cache data
+- **Automatic PNG snapshot**: Overwrite a clean full-graph image whenever the graph view is rendered after toolbar changes
 - **Show strongest hubs**: Limit the graph to the top 25, 50, 100, or 200 entities by degree
 - **Graph color**: Color by entity type or locally detected community
 
@@ -177,10 +179,20 @@ The graph toolbar discovers source folders from persisted note provenance. Chang
 the source folder is local and does not call the configured AI provider.
 Parallel relationships are rendered as one weighted edge, and graph labels use
 display-only title casing without changing stored entity names or note text.
+The default snapshot path is `Journal Meaning Graph/graph-view.png`.
 
 Private name substitutions can be stored in the plugin's local
 `entityPseudonyms` setting. They are applied before graph resolution and never
 rewrite the source Markdown.
+
+### What embeddings and graph geometry mean
+
+- Notes are split into chunks for LLM entity/relationship extraction; the chunks are not stored as vectors.
+- Embeddings are generated once per extracted entity **name**, not once per note and not once per word.
+- Embeddings support entity deduplication and do not drive the Cytoscape layout or community colors.
+- With **Rank → By edges**, node size represents extracted relationship degree.
+- With **Rank → Across notes**, node size represents recurrence across distinct source notes.
+- Community colors come from local graph-topology detection; they are not embedding dimensions or psychological categories.
 
 ### Related-Note Backlinks
 - Run **Review related-note backlink suggestions**

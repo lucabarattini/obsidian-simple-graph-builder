@@ -478,6 +478,51 @@ export class SettingsTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
+			.setName('Excluded graph names')
+			.setDesc('Hide exact entity names from the meaning view without modifying notes or deleting cached data. Enter one name per line.')
+			.addTextArea(textArea => {
+				textArea
+					.setPlaceholder('One entity name per line')
+					.setValue(this.plugin.settings.graphExcludedNames.join('\n'))
+					.onChange(async value => {
+						this.plugin.settings.graphExcludedNames = value
+							.split('\n')
+							.map(name => name.trim())
+							.filter(Boolean);
+						await this.plugin.saveSettings();
+					});
+				textArea.inputEl.rows = 3;
+				textArea.inputEl.addClass('sgb-setting-input-wide');
+			});
+
+		new Setting(containerEl)
+			.setName('Save graph PNG automatically')
+			.setDesc('Overwrite a clean PNG of the full graph canvas after the view opens or any graph-toolbar setting changes.')
+			.addToggle(toggle => {
+				toggle
+					.setValue(this.plugin.settings.graphAutoSnapshot)
+					.onChange(async value => {
+						this.plugin.settings.graphAutoSnapshot = value;
+						await this.plugin.saveSettings();
+					});
+			});
+
+		new Setting(containerEl)
+			.setName('Graph PNG path')
+			.setDesc('Vault-relative output path. The image is overwritten rather than versioned.')
+			.addText(text => {
+				text
+					.setPlaceholder('Journal Meaning Graph/graph-view.png')
+					.setValue(this.plugin.settings.graphSnapshotPath)
+					.onChange(async value => {
+						this.plugin.settings.graphSnapshotPath = value.trim()
+							|| 'Journal Meaning Graph/graph-view.png';
+						await this.plugin.saveSettings();
+					});
+				text.inputEl.addClass('sgb-setting-input-wide');
+			});
+
+		new Setting(containerEl)
 			.setName('Minimum connections')
 			.setDesc(`Hide nodes with fewer than this many connections (current: ${this.plugin.settings.graphMinDegree})`)
 			.addSlider(slider => {

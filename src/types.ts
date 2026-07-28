@@ -333,6 +333,9 @@ export interface Settings {
 	graphConnectedOnly: boolean;
 	graphMainClusterOnly: boolean;
 	graphHiddenNodeIds: string[];
+	graphExcludedNames: string[]; // Local display exclusions that survive cache rebuilds
+	graphAutoSnapshot: boolean;
+	graphSnapshotPath: string; // Vault-relative PNG path, overwritten after graph renders
 	entityPseudonyms: Record<string, string>; // Private name -> graph pseudonym; Markdown stays unchanged
 	// Generated Obsidian backlinks
 	backlinkMinSharedEntities: number;
