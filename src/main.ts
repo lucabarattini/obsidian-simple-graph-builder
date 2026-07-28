@@ -97,7 +97,7 @@ export default class SimpleGraphBuilderPlugin extends Plugin {
 		this.addSettingTab(new SettingsTab(this.app, this));
 
 		// Add ribbon icon with menu
-		this.addRibbonIcon('waypoints', 'Simple graph builder', (evt) => {
+		this.addRibbonIcon('waypoints', 'Journal Meaning Graph', (evt) => {
 			const menu = new Menu();
 
 			menu.addItem((item) =>

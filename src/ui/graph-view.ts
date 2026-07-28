@@ -18,7 +18,10 @@ import { EntityEditModal } from './entity-edit-modal';
 // Register fCoSE layout extension
 cytoscape.use(fcose);
 
-export const GRAPH_VIEW_TYPE = 'simple-graph-view';
+// Keep view types unique to this fork. Obsidian registers view types globally,
+// so reusing the upstream IDs prevents activation when both builds have been
+// loaded in the same app session.
+export const GRAPH_VIEW_TYPE = 'journal-meaning-graph-view';
 
 // Performance thresholds
 const LARGE_GRAPH_THRESHOLD = 500; // nodes + edges

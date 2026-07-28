@@ -2,7 +2,7 @@ import { ItemView, WorkspaceLeaf, MarkdownView } from 'obsidian';
 import SimpleGraphBuilderPlugin from '../main';
 import { OntologyNode, OntologyEdge, getEntityTypeColor } from '../types';
 
-export const NEIGHBORHOOD_VIEW_TYPE = 'simple-graph-neighborhood';
+export const NEIGHBORHOOD_VIEW_TYPE = 'journal-meaning-graph-neighborhood';
 
 /**
  * Connection info for display in neighborhood view.
